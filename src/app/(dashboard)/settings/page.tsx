@@ -19,6 +19,7 @@ import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
+  SECTION_META,
   resolveSection,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
@@ -42,7 +43,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, canEditSettings } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -50,7 +51,12 @@ function SettingsPageInner() {
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const section = resolveSection(searchParams.get('tab'));
+  let section = resolveSection(searchParams.get('tab'));
+  
+  // Protect admin-only tabs from direct URL access by agents/viewers
+  if (SECTION_META[section]?.adminOnly && !canEditSettings) {
+    section = 'overview';
+  }
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());

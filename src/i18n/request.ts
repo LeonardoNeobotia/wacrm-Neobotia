@@ -1,14 +1,14 @@
 import { getRequestConfig } from 'next-intl/server';
+import { cookies } from 'next/headers';
 
 export default getRequestConfig(async () => {
-  // Read the locale from the environment, defaulting to 'en'
-  const locale = process.env.NEXT_PUBLIC_APP_LOCALE || 'en';
+  // Forzar español como único idioma según el requerimiento del usuario
+  const locale = 'es';
 
   let messages;
   try {
-    messages = (await import(`../../messages/${locale}.json`)).default;
+    messages = (await import(`../../messages/es.json`)).default;
   } catch (error) {
-    // Fallback to English if the dictionary for the requested locale doesn't exist yet
     messages = (await import(`../../messages/en.json`)).default;
   }
 

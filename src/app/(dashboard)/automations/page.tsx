@@ -20,7 +20,7 @@ import {
 
 import { createClient } from "@/lib/supabase/client"
 import { useCan } from "@/hooks/use-can"
-import { useTranslations } from "next-intl"
+import { useTranslations, useFormatter } from "next-intl"
 import type { Automation } from "@/types"
 import { Button } from "@/components/ui/button"
 import { GatedButton } from "@/components/ui/gated-button"
@@ -41,7 +41,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
-import { triggerMeta, formatRelative } from "@/lib/automations/trigger-meta"
+import { triggerMeta } from "@/lib/automations/trigger-meta"
 import { cn } from "@/lib/utils"
 
 const TEMPLATE_ORDER: TemplateSlug[] = [
@@ -183,8 +183,14 @@ export default function AutomationsPage() {
           <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t("templatesTitle")}</h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             {TEMPLATE_ORDER.map((slug) => {
-              const t = AUTOMATION_TEMPLATES[slug]
+              const tpl = AUTOMATION_TEMPLATES[slug]
               const Icon = TEMPLATE_ICON[slug]
+              // Intentar leer nombre y descripción desde el diccionario de traducciones.
+              // Si no existe la clave, se usa el valor por defecto del template.
+              let cardName = tpl.name
+              let cardDesc = tpl.description
+              try { cardName = t(`templateCards.${slug}.name` as never) ?? tpl.name } catch { /* fallback */ }
+              try { cardDesc = t(`templateCards.${slug}.description` as never) ?? tpl.description } catch { /* fallback */ }
               return (
                 <button
                   key={slug}
@@ -194,8 +200,8 @@ export default function AutomationsPage() {
                   <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/15">
                     <Icon className="h-5 w-5" />
                   </div>
-                  <div className="text-sm font-semibold text-foreground">{t.name}</div>
-                  <p className="mt-1 text-xs text-muted-foreground">{t.description}</p>
+                  <div className="text-sm font-semibold text-foreground">{cardName}</div>
+                  <p className="mt-1 text-xs text-muted-foreground">{cardDesc}</p>
                 </button>
               )
             })}
@@ -278,6 +284,8 @@ function AutomationCard({
   onDelete: () => void
   t: ReturnType<typeof useTranslations>
 }) {
+  const format = useFormatter()
+  const tBuilder = useTranslations("Automations.builder")
   const meta = triggerMeta(automation.trigger_type)
   return (
     <li className="rounded-xl border border-border bg-card transition-colors hover:border-border">
@@ -315,7 +323,14 @@ function AutomationCard({
                 meta.pillClass,
               )}
             >
-              {meta.label}
+              {(() => {
+                try {
+                  const translated = tBuilder(`triggers.${automation.trigger_type}.label` as never)
+                  return typeof translated === 'string' ? translated : meta.label
+                } catch {
+                  return meta.label
+                }
+              })()}
             </span>
             <span className="tabular-nums">
               {automation.execution_count === 1
@@ -323,7 +338,13 @@ function AutomationCard({
                 : t("runsPlural", { count: automation.execution_count })}
             </span>
             <span aria-hidden>·</span>
-            <span>{t("lastRun", { time: formatRelative(automation.last_executed_at) })}</span>
+            <span>
+              {t("lastRun", {
+                time: automation.last_executed_at
+                  ? format.relativeTime(new Date(automation.last_executed_at), { now: new Date() })
+                  : t("never" as never)
+              })}
+            </span>
           </div>
         </button>
 

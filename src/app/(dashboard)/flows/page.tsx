@@ -274,10 +274,16 @@ export default function FlowsPage() {
                     >
                       <Icon className="h-5 w-5 text-primary" />
                       <span className="text-sm font-semibold text-popover-foreground">
-                        {template.name}
+                        {(() => {
+                          try { return (t(`templates.${template.slug}.name` as never) as string) ?? template.name; }
+                          catch { return template.name; }
+                        })()}
                       </span>
                       <span className="text-xs leading-relaxed text-muted-foreground">
-                        {template.description}
+                        {(() => {
+                          try { return (t(`templates.${template.slug}.description` as never) as string) ?? template.description; }
+                          catch { return template.description; }
+                        })()}
                       </span>
                       <span className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
                         {t("nodeCount", { count: template.node_count })}

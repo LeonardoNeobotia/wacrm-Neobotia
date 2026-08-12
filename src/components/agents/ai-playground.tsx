@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { useTranslations } from 'next-intl';
 
 interface Turn {
   role: 'user' | 'assistant';
@@ -18,6 +19,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const t = useTranslations('AIPlayground');
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -85,9 +87,9 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">Playground</span>
+          <span className="text-sm font-medium text-foreground">{t('title')}</span>
           <span className="text-xs text-muted-foreground">
-            — test replies as if you were a customer
+            — {t('subtitle')}
           </span>
         </div>
         <Button
@@ -97,7 +99,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
           disabled={turns.length === 0 || sending}
           className="text-muted-foreground"
         >
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> {t('reset')}
         </Button>
       </div>
 
@@ -106,10 +108,9 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         {turns.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
             <Bot className="mb-2 h-8 w-8 text-muted-foreground/60" />
-            <p>Send a message to see how your agent would reply.</p>
+            <p>{t('emptyTitle')}</p>
             <p className="mt-1 text-xs">
-              It uses your knowledge base and behaves exactly like the
-              auto-reply bot — including handoff.
+              {t('emptyDesc')}
             </p>
             {onGoToSetup && (
               <Button
@@ -118,7 +119,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                 onClick={onGoToSetup}
                 className="mt-1 h-auto p-0 text-xs"
               >
-                Not set up yet? Go to Setup <ArrowRight className="ml-1 h-3 w-3" />
+                {t('notSetupLink')} <ArrowRight className="ml-1 h-3 w-3" />
               </Button>
             )}
           </div>
@@ -176,7 +177,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a customer message…"
+          placeholder={t('inputPlaceholder')}
           rows={1}
           className="flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
         />

@@ -64,8 +64,8 @@ export function AppearancePanel() {
             <ThemeCard
               key={tObj.id}
               id={tObj.id}
-              name={tObj.name}
-              tagline={tObj.tagline}
+              name={t(`themes.${tObj.id}.title`) || tObj.name}
+              tagline={t(`themes.${tObj.id}.desc`) || tObj.tagline}
               swatch={tObj.swatch}
               isActive={tObj.id === theme}
               onPick={() => setTheme(tObj.id)}

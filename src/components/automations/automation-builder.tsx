@@ -1481,6 +1481,24 @@ function StepEditor({
               />
             </FieldBlock>
           )}
+          {cfg.subject === "time_of_day" && (
+            <FieldBlock label={t("config.timezoneLabel", { defaultValue: "Timezone" })}>
+              <select
+                value={(cfg.timezone as string) ?? "UTC"}
+                onChange={(e) => set({ timezone: e.target.value })}
+                className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+              >
+                <option value="UTC">UTC (Universal Time)</option>
+                <option value="America/Santiago">Santiago, Chile (America/Santiago)</option>
+                <option value="America/Mexico_City">Ciudad de México (America/Mexico_City)</option>
+                <option value="America/Bogota">Bogotá (America/Bogota)</option>
+                <option value="America/Lima">Lima (America/Lima)</option>
+                <option value="America/Argentina/Buenos_Aires">Buenos Aires</option>
+                <option value="America/New_York">New York (America/New_York)</option>
+                <option value="Europe/Madrid">Madrid (Europe/Madrid)</option>
+              </select>
+            </FieldBlock>
+          )}
         </>
       )
     case "send_webhook":

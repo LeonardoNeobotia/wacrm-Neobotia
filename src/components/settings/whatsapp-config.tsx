@@ -760,7 +760,7 @@ export function WhatsAppConfig() {
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground">
                   <ol className="list-decimal list-inside space-y-1 text-sm">
-                    <li dangerouslySetInnerHTML={{ __html: t('step1_1') }} />
+                    <li dangerouslySetInnerHTML={{ __html: t.raw('step1_1') }} />
                     <li>{t('step1_2')}</li>
                     <li>{t('step1_3')}</li>
                     <li>{t('step1_4')}</li>

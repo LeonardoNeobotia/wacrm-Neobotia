@@ -990,6 +990,7 @@
           "days": "일"
         },
         "subjectLabel": "대상",
+        "timezoneLabel": "시간대 (Timezone)",
         "subjects": {
           "tag_presence": "태그 존재 여부",
           "contact_field": "연락처 필드",

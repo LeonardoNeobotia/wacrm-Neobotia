@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { CURRENCIES } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -39,6 +40,7 @@ export function DealsSettings() {
   } = useAuth();
 
   const [selected, setSelected] = useState(defaultCurrency);
+  const [convertExisting, setConvertExisting] = useState(true);
   const [saving, setSaving] = useState(false);
   const t = useTranslations("Settings.deals");
 
@@ -53,20 +55,69 @@ export function DealsSettings() {
   async function handleSave() {
     if (!accountId || !dirty) return;
     setSaving(true);
+    
+    let rate = 1;
+    let convertedCount = 0;
+    
+    // Si se activó la conversión, consultamos la API de tipo de cambio
+    if (convertExisting) {
+      try {
+        const res = await fetch(`https://open.er-api.com/v6/latest/${defaultCurrency}`);
+        const data = await res.json();
+        if (data.rates && data.rates[selected]) {
+          rate = data.rates[selected];
+        }
+      } catch (err) {
+        console.error("Failed to fetch exchange rates:", err);
+        toast.error(t("conversionApiFailed"));
+        setSaving(false);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("accounts")
       .update({ default_currency: selected })
       .eq("id", accountId);
+      
     if (error) {
       toast.error(t("saveFailed"));
       setSaving(false);
       return;
     }
+
+    // Convertir deals existentes si hay una tasa válida diferente a 1
+    if (convertExisting && rate !== 1) {
+      const { data: deals } = await supabase
+        .from("deals")
+        .select("id, value")
+        .eq("account_id", accountId);
+
+      if (deals && deals.length > 0) {
+        // Enviar actualizaciones en lotes pequeños
+        const chunkSize = 20;
+        for (let i = 0; i < deals.length; i += chunkSize) {
+          const chunk = deals.slice(i, i + chunkSize);
+          await Promise.all(
+            chunk.map(async (d) => {
+              const newValue = Math.round((d.value || 0) * rate);
+              await supabase.from("deals").update({ value: newValue, currency: selected }).eq("id", d.id);
+            })
+          );
+        }
+        convertedCount = deals.length;
+      }
+    }
+
     // Pull the new value back into the auth context so the deal form
     // and every total pick it up without a full reload.
     await refreshProfile();
     setSaving(false);
-    toast.success(t("saveSuccess"));
+    if (convertedCount > 0) {
+      toast.success(t("saveAndConverted", { count: convertedCount }));
+    } else {
+      toast.success(t("saveSuccess"));
+    }
   }
 
   return (
@@ -106,6 +157,19 @@ export function DealsSettings() {
               </p>
             )}
           </div>
+
+          {canEditSettings && dirty && (
+            <div className="flex items-center space-x-2 pt-2 pb-2">
+              <Checkbox
+                id="convert-existing"
+                checked={convertExisting}
+                onCheckedChange={(val) => setConvertExisting(val === true)}
+              />
+              <Label htmlFor="convert-existing" className="font-normal leading-snug cursor-pointer">
+                {t("convertExistingLabel")}
+              </Label>
+            </div>
+          )}
 
           {canEditSettings && (
             <Button

@@ -576,7 +576,7 @@ export function MembersTab() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-popover-foreground">
               <AlertTriangle className="size-4 text-amber-400" />
-              {t('removeDialogTitle')}
+              {t('removeDialogTitle', { name: removingMember?.full_name || t('unnamed') })}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {t.rich('removeDialogDesc', { 

@@ -770,8 +770,33 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       // (supports over-midnight ranges like "18:00-09:00").
       const [from, to] = (cfg.operand ?? '').split('-')
       if (!from || !to) return false
+      
+      const tz = cfg.timezone || 'UTC'
       const now = new Date()
-      const mins = now.getHours() * 60 + now.getMinutes()
+      
+      let currentH = 0
+      let currentM = 0
+      
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          minute: 'numeric',
+          hourCycle: 'h23'
+        }).formatToParts(now)
+        
+        for (const p of parts) {
+          if (p.type === 'hour') currentH = parseInt(p.value, 10)
+          if (p.type === 'minute') currentM = parseInt(p.value, 10)
+        }
+      } catch (e) {
+        // Fallback if timezone is invalid
+        currentH = now.getUTCHours()
+        currentM = now.getUTCMinutes()
+      }
+
+      const mins = currentH * 60 + currentM
+      
       const parse = (s: string) => {
         const [h, m] = s.split(':').map(Number)
         return (h || 0) * 60 + (m || 0)

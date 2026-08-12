@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
+import { useAuth } from '@/hooks/use-auth';
 
 import { cn } from '@/lib/utils';
 import {
@@ -32,6 +33,7 @@ export function SettingsRail({
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
   const t = useTranslations('Settings');
+  const { canEditSettings } = useAuth();
   const activeRef = useRef<HTMLButtonElement>(null);
 
   // When horizontal (mobile), keep the active chip in view. On desktop
@@ -56,9 +58,15 @@ export function SettingsRail({
       )}
     >
       {RAIL_GROUPS.map(({ label, group }) => {
-        const items = SETTINGS_SECTIONS.filter(
-          (s) => SECTION_META[s].group === group,
-        );
+        const items = SETTINGS_SECTIONS.filter((s) => {
+          const meta = SECTION_META[s];
+          if (meta.group !== group) return false;
+          if (meta.adminOnly && !canEditSettings) return false;
+          return true;
+        });
+        
+        if (items.length === 0) return null;
+
         return (
           <div
             key={group}
