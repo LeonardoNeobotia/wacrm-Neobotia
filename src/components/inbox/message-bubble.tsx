@@ -277,6 +277,14 @@ export function MessageBubble({
               {t("aiBadge")}
             </span>
           )}
+          {!isAgent && message.sentiment && (
+            <span
+              className="text-[12px] opacity-80"
+              title={`Sentimiento: ${message.sentiment}`}
+            >
+              {message.sentiment === 'positive' ? '😊' : message.sentiment === 'negative' ? '😠' : '😐'}
+            </span>
+          )}
           <span
             className={cn(
               "text-[10px]",

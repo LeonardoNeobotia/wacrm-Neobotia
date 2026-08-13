@@ -67,6 +67,7 @@ interface TemplateFormData {
   name: string;
   category: MessageTemplate['category'];
   language: string;
+  variable_format: 'positional' | 'named';
   header_format: HeaderFormat;
   header_content: string;
   header_media_url: string;
@@ -81,6 +82,7 @@ const emptyForm: TemplateFormData = {
   name: '',
   category: 'Marketing',
   language: 'en_US',
+  variable_format: 'named',
   header_format: 'none',
   header_content: '',
   header_media_url: '',
@@ -92,23 +94,14 @@ const emptyForm: TemplateFormData = {
 };
 
 const COMMON_LANGUAGE_CODES = [
-  'en_US',
-  'en_GB',
-  'en',
-  'es',
-  'es_ES',
-  'es_MX',
-  'fr',
-  'fr_FR',
-  'de',
-  'it',
-  'pt_BR',
-  'pt_PT',
-  'nl',
-  'pl',
-  'ru',
-  'tr',
-  'lt',
+  { code: 'es', label: 'Español' },
+  { code: 'es_AR', label: 'Español (Argentina)' },
+  { code: 'es_CL', label: 'Español (Chile)' },
+  { code: 'es_CO', label: 'Español (Colombia)' },
+  { code: 'es_MX', label: 'Español (México)' },
+  { code: 'es_PE', label: 'Español (Perú)' },
+  { code: 'es_ES', label: 'Español (España)' },
+  { code: 'en_US', label: 'Inglés (Estados Unidos)' },
 ];
 
 function emptyButton(type: TemplateButton['type']): TemplateButton {
@@ -151,13 +144,25 @@ export function TemplateManager() {
   const [uploadingHeader, setUploadingHeader] = useState(false);
   const headerFileRef = useRef<HTMLInputElement>(null);
 
-  // Body variable indices — `[1, 2, 3]` for "{{1}} {{2}} {{3}}". We
-  // re-run the extractor on every render to keep the sample-value rows
-  // in sync with what the user typed.
-  const bodyVarCount = useMemo(
-    () => extractVariableIndices(form.body_text).length,
-    [form.body_text],
-  );
+  // Body variable logic — handles both positional and named variables.
+  const extractedBodyVars = useMemo(() => {
+    if (form.variable_format === 'named') {
+      const matches = form.body_text.matchAll(/\{\{([^}]+)\}\}/g);
+      const set = new Set<string>();
+      for (const m of matches) set.add(m[1].trim());
+      return Array.from(set);
+    } else {
+      const matches = form.body_text.matchAll(/\{\{(\d+)\}\}/g);
+      const set = new Set<number>();
+      for (const m of matches) {
+        const n = Number(m[1]);
+        if (Number.isFinite(n) && n >= 1) set.add(n);
+      }
+      return Array.from(set).sort((a, b) => a - b).map(String);
+    }
+  }, [form.body_text, form.variable_format]);
+
+  const bodyVarCount = extractedBodyVars.length;
   const headerVarCount = useMemo(
     () =>
       form.header_format === 'text'
@@ -214,6 +219,16 @@ export function TemplateManager() {
       sample_values.header = [form.header_sample.trim()];
     }
 
+    let finalBodyText = form.body_text.trim();
+    if (form.variable_format === 'named' && extractedBodyVars.length > 0) {
+      sample_values.named_vars = extractedBodyVars;
+      extractedBodyVars.forEach((varName, index) => {
+        // match exactly {{ varName }} ignoring spaces
+        const regex = new RegExp(`\\{\\{\\s*${varName}\\s*\\}\\}`, 'g');
+        finalBodyText = finalBodyText.replace(regex, `{{${index + 1}}}`);
+      });
+    }
+
     return {
       name: form.name.trim(),
       category: form.category,
@@ -225,7 +240,7 @@ export function TemplateManager() {
         form.header_format !== 'none' && form.header_format !== 'text'
           ? form.header_media_url.trim() || undefined
           : undefined,
-      body_text: form.body_text.trim(),
+      body_text: finalBodyText,
       footer_text: form.footer_text.trim() || undefined,
       buttons: form.buttons.length > 0 ? form.buttons : undefined,
       sample_values:
@@ -235,15 +250,26 @@ export function TemplateManager() {
 
   function openEdit(template: MessageTemplate) {
     setEditingId(template.id);
+    let bodyText = template.body_text;
+    let varFormat: 'positional' | 'named' = 'positional';
+    
+    if (template.sample_values?.named_vars && template.sample_values.named_vars.length > 0) {
+      varFormat = 'named';
+      template.sample_values.named_vars.forEach((name, i) => {
+         bodyText = bodyText.replace(new RegExp(`\\{\\{${i+1}\\}\\}`, 'g'), `{{${name}}}`);
+      });
+    }
+
     setForm({
       name: template.name,
       category: template.category,
       language: template.language || 'en_US',
+      variable_format: varFormat,
       header_format: (template.header_type ?? 'none') as HeaderFormat,
       header_content: template.header_content ?? '',
       header_media_url: template.header_media_url ?? '',
       header_sample: template.sample_values?.header?.[0] ?? '',
-      body_text: template.body_text,
+      body_text: bodyText,
       body_samples: template.sample_values?.body ?? [],
       footer_text: template.footer_text ?? '',
       buttons: template.buttons ?? [],
@@ -481,6 +507,11 @@ export function TemplateManager() {
     }
   }
 
+  const formatPlaceholder = (str: string) => {
+    if (form.variable_format !== 'named') return str;
+    return str.replace(/\{\{1\}\}/g, '{{nombre}}').replace(/\{\{2\}\}/g, '{{producto}}');
+  };
+
   return (
     <section className="animate-in fade-in-50 space-y-4 duration-200">
       <SettingsPanelHead
@@ -705,21 +736,28 @@ export function TemplateManager() {
 
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('language')}</Label>
-                <Input
-                  list="template-language-codes"
-                  placeholder="en_US"
+                <Select
                   value={form.language}
-                  onChange={(e) =>
-                    setForm({ ...form, language: e.target.value })
+                  onValueChange={(val) =>
+                    setForm({ ...form, language: val || '' })
                   }
                   disabled={editingId !== null}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
-                />
-                <datalist id="template-language-codes">
-                  {COMMON_LANGUAGE_CODES.map((code) => (
-                    <option key={code} value={code} />
-                  ))}
-                </datalist>
+                >
+                  <SelectTrigger className="w-full bg-muted border-border text-foreground">
+                    <SelectValue placeholder="es_CL" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    {COMMON_LANGUAGE_CODES.map((lang) => (
+                      <SelectItem
+                        key={lang.code}
+                        value={lang.code}
+                        className="text-popover-foreground focus:bg-muted focus:text-popover-foreground"
+                      >
+                        {lang.label} ({lang.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="text-[11px] text-muted-foreground">
                   {editingId ? (
                     t('langFixed')
@@ -773,22 +811,36 @@ export function TemplateManager() {
 
               {form.header_format === 'text' && (
                 <div className="space-y-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="template-header-text" className="text-muted-foreground sr-only">Header text</Label>
+                    <span 
+                      className={`text-xs ml-auto ${
+                        form.header_content.length > TEMPLATE_LIMITS.headerTextMaxLength 
+                          ? 'text-red-500 font-medium' 
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      {form.header_content.length}/{TEMPLATE_LIMITS.headerTextMaxLength}
+                    </span>
+                  </div>
                   <Input
                     id="template-header-text"
                     aria-label="Header text"
-                    placeholder={t.raw('headerTextPlaceholder')}
+                    placeholder={formatPlaceholder(t.raw('headerTextPlaceholder'))}
                     value={form.header_content}
                     onChange={(e) =>
                       setForm({ ...form, header_content: e.target.value })
                     }
                     maxLength={TEMPLATE_LIMITS.headerTextMaxLength}
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    className={`bg-muted border-border text-foreground placeholder:text-muted-foreground ${
+                      form.header_content.length > TEMPLATE_LIMITS.headerTextMaxLength ? 'border-red-500/50 focus-visible:ring-red-500/50' : ''
+                    }`}
                   />
                   {headerVarCount > 0 && (
                     <Input
                       id="template-header-sample"
                       aria-label={t('headerSampleAria')}
-                      placeholder={t.raw('headerSamplePlaceholder')}
+                      placeholder={formatPlaceholder(t.raw('headerSamplePlaceholder'))}
                       value={form.header_sample}
                       onChange={(e) =>
                         setForm({ ...form, header_sample: e.target.value })
@@ -863,19 +915,48 @@ export function TemplateManager() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('bodyText')}</Label>
+              <div className="flex items-center justify-between pb-1">
+                <Label className="text-muted-foreground">{t('variableFormat')}</Label>
+                <Select
+                  value={form.variable_format}
+                  onValueChange={(val) => setForm({ ...form, variable_format: val as 'positional' | 'named' })}
+                  disabled={editingId !== null}
+                >
+                  <SelectTrigger className="w-[180px] bg-muted border-border text-foreground h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    <SelectItem value="named" className="text-xs">{t.raw('formatNamed')}</SelectItem>
+                    <SelectItem value="positional" className="text-xs">{t.raw('formatPositional')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-muted-foreground">{t('bodyText')}</Label>
+                <span 
+                  className={`text-xs ${
+                    form.body_text.length > TEMPLATE_LIMITS.bodyMaxLength 
+                      ? 'text-red-500 font-medium' 
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  {form.body_text.length}/{TEMPLATE_LIMITS.bodyMaxLength}
+                </span>
+              </div>
               <Textarea
-                placeholder={t.raw('bodyPlaceholder')}
+                placeholder={formatPlaceholder(t.raw('bodyPlaceholder'))}
                 value={form.body_text}
                 onChange={(e) =>
                   setForm({ ...form, body_text: e.target.value })
                 }
                 rows={4}
                 maxLength={TEMPLATE_LIMITS.bodyMaxLength}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground resize-none"
+                className={`bg-muted border-border text-foreground placeholder:text-muted-foreground resize-none ${
+                  form.body_text.length > TEMPLATE_LIMITS.bodyMaxLength ? 'border-red-500/50 focus-visible:ring-red-500/50' : ''
+                }`}
               />
               <p className="text-[11px] text-muted-foreground">
-                {t.raw('bodyHint')}
+                {formatPlaceholder(t.raw('bodyHint'))}
               </p>
 
               {bodyVarCount > 0 && (
@@ -885,20 +966,27 @@ export function TemplateManager() {
                   </Label>
                   {form.body_samples.map((val, i) => {
                     const inputId = `template-body-sample-${i}`;
+                    const varName = form.variable_format === 'named' && extractedBodyVars[i]
+                      ? `{{${extractedBodyVars[i]}}}`
+                      : `{{${i + 1}}}`;
                     return (
-                      <Input
-                        key={i}
-                        id={inputId}
-                        aria-label={t('sampleAria', { var: `{{${i + 1}}}` })}
-                        placeholder={t('samplePlaceholder', { var: `{{${i + 1}}}` })}
-                        value={val}
-                        onChange={(e) => {
-                          const next = [...form.body_samples];
-                          next[i] = e.target.value;
-                          setForm({ ...form, body_samples: next });
-                        }}
-                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                      />
+                      <div key={i} className="flex flex-col gap-1.5">
+                        <Label htmlFor={inputId} className="text-xs text-muted-foreground">
+                          {t('sampleLabel', { var: varName })}
+                        </Label>
+                        <Input
+                          id={inputId}
+                          aria-label={t('sampleAria', { var: varName })}
+                          placeholder={t('samplePlaceholder', { var: varName })}
+                          value={val}
+                          onChange={(e) => {
+                            const next = [...form.body_samples];
+                            next[i] = e.target.value;
+                            setForm({ ...form, body_samples: next });
+                          }}
+                          className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                        />
+                      </div>
                     );
                   })}
                 </div>
@@ -906,7 +994,18 @@ export function TemplateManager() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('footer')}</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-muted-foreground">{t('footer')}</Label>
+                <span 
+                  className={`text-xs ${
+                    form.footer_text.length > TEMPLATE_LIMITS.footerMaxLength 
+                      ? 'text-red-500 font-medium' 
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  {form.footer_text.length}/{TEMPLATE_LIMITS.footerMaxLength}
+                </span>
+              </div>
               <Input
                 placeholder={t('footerPlaceholder')}
                 value={form.footer_text}
@@ -914,7 +1013,9 @@ export function TemplateManager() {
                   setForm({ ...form, footer_text: e.target.value })
                 }
                 maxLength={TEMPLATE_LIMITS.footerMaxLength}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                className={`bg-muted border-border text-foreground placeholder:text-muted-foreground ${
+                  form.footer_text.length > TEMPLATE_LIMITS.footerMaxLength ? 'border-red-500/50 focus-visible:ring-red-500/50' : ''
+                }`}
               />
             </div>
 
@@ -1007,7 +1108,7 @@ export function TemplateManager() {
                       {btn.type === 'URL' && (
                         <div className="space-y-1 pl-1">
                           <Input
-                            placeholder={t.raw('urlPlaceholder')}
+                            placeholder={formatPlaceholder(t.raw('urlPlaceholder'))}
                             value={btn.url}
                             onChange={(e) =>
                               updateButton(i, { url: e.target.value })
@@ -1016,7 +1117,7 @@ export function TemplateManager() {
                           />
                           {extractVariableIndices(btn.url).length > 0 && (
                             <Input
-                              placeholder={t.raw('urlSamplePlaceholder')}
+                              placeholder={formatPlaceholder(t.raw('urlSamplePlaceholder'))}
                               value={btn.example ?? ''}
                               onChange={(e) =>
                                 updateButton(i, { example: e.target.value })

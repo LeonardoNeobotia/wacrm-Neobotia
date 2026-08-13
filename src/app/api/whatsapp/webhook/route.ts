@@ -10,6 +10,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { dispatchSentimentAnalysis } from '@/lib/ai/sentiment'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -857,14 +858,28 @@ async function processMessage(
   // the account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
+  // AI auto-reply and Sentiment Analysis run concurrently
+  const aiTasks: Promise<void>[] = []
+  
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
+    aiTasks.push(dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
-    })
+    }).catch(err => console.error('[ai auto-reply] failed:', err)))
   }
+
+  // Sentiment analysis on all inbound text messages
+  if (inboundText.trim() && insertedRows && insertedRows.length > 0) {
+    aiTasks.push(dispatchSentimentAnalysis({
+      accountId,
+      messageId: insertedRows[0].id,
+      text: inboundText,
+    }).catch(err => console.error('[sentiment analysis] dispatch rejected:', err)))
+  }
+
+  await Promise.all(aiTasks)
 
   // message.received webhook (public API). Awaited — not fire-and-forget
   // — because we're inside the route's `after()` block, which only keeps

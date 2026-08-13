@@ -75,15 +75,22 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="w-full max-w-md px-4 sm:px-0">
+      <Card className="w-full border-border/50 bg-card/80 backdrop-blur-md shadow-2xl">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
-            )}
+          <div className="mb-1 flex items-center justify-center">
+            {/* Logo para el modo claro */}
+            <img 
+              src="/logo-neo-wa-dark.png" 
+              alt="Neo WA Logo" 
+              className="h-30 w-auto dark:hidden" 
+            />
+            {/* Logo para el modo oscuro */}
+            <img 
+              src="/logo-neo-wa.png" 
+              alt="Neo WA Logo" 
+              className="hidden h-30 w-auto dark:block" 
+            />
           </div>
           <CardTitle className="text-xl text-foreground">
             {inviteToken ? t('titleAccept') : t('titleWelcome')}

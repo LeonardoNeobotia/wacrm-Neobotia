@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AnimatedBackground } from "@/components/ui/animated-background";
 
 // Shared metadata for auth pages (login / signup / forgot-password).
 // None of these should be indexed — they'd compete with the marketing
@@ -20,5 +21,12 @@ export const metadata: Metadata = {
 };
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  return children;
+  return (
+    <div className="relative min-h-screen">
+      <AnimatedBackground />
+      <div className="relative z-10 flex min-h-screen items-center justify-center">
+        {children}
+      </div>
+    </div>
+  );
 }

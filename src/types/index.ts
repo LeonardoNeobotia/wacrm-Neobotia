@@ -252,6 +252,11 @@ export interface Message {
    * badge in the inbox. Migration 033.
    */
   ai_generated?: boolean;
+  /**
+   * The sentiment of the message (positive, neutral, negative).
+   * Usually populated for inbound customer messages by an AI agent.
+   */
+  sentiment?: 'positive' | 'neutral' | 'negative' | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';
@@ -310,6 +315,7 @@ export type TemplateButton =
 export interface TemplateSampleValues {
   body?: string[];
   header?: string[];
+  named_vars?: string[];
 }
 
 export interface MessageTemplate {
