@@ -22,8 +22,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "NeoWapp",
+    template: "%s — NeoWapp",
   },
   description: "Self-hostable CRM template for WhatsApp.",
   robots: {
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     follow: false,
   },
   icons: {
-    icon: [{ url: "/icon" }],
+    icon: [{ url: "/logo_neobotia2.png" }],
   },
   formatDetection: {
     email: false,
