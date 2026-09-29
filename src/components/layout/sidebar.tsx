@@ -26,6 +26,7 @@ import {
   X,
   Zap,
   Activity,
+  ClipboardList,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -96,6 +97,7 @@ const navItems: NavItem[] = [
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
+  { href: "/forms", labelKey: "webForms", icon: ClipboardList },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
   { href: "/sentiment", labelKey: "sentiment", icon: Activity },
   { href: "/automations", labelKey: "automations", icon: Zap },

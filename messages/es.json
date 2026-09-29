@@ -60,6 +60,7 @@
     "automations": "Automatizaciones",
     "flows": "Flujos",
     "aiAgents": "Agentes IA",
+    "webForms": "Formularios Web",
     "settings": "Configuración",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversación no leída} other {conversaciones no leídas}}",

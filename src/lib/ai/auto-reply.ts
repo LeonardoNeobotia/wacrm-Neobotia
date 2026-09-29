@@ -112,11 +112,31 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text: rawText, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
+
+    let text = rawText
+    let leadData: any = null
+
+    if (rawText) {
+      const jsonMatch = rawText.match(/```json\s*([\s\S]*?)```/) || rawText.match(/(\{[\s\S]*\})/)
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0])
+          if (parsed && typeof parsed.text === 'string') {
+            text = parsed.text
+            if (parsed.lead_data) {
+              leadData = parsed.lead_data
+            }
+          }
+        } catch (e) {
+          // Fallback a texto crudo
+        }
+      }
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -187,6 +207,59 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+
+    // Capturar lead si está calificado
+    if (leadData && leadData.is_qualified === true) {
+      try {
+        const contactUpdate: Record<string, string> = {}
+        if (leadData.email) contactUpdate.email = leadData.email
+        if (leadData.company) contactUpdate.company = leadData.company
+        if (leadData.name) contactUpdate.name = leadData.name
+        
+        if (Object.keys(contactUpdate).length > 0) {
+          await db.from('contacts').update(contactUpdate).eq('id', contactId)
+        }
+
+        // Crear Deal en el primer pipeline activo
+        const { data: stages } = await db
+          .from('pipeline_stages')
+          .select('id, pipeline_id, pipelines!inner(account_id)')
+          .eq('pipelines.account_id', accountId)
+          .order('position')
+          .limit(1)
+
+        if (stages && stages.length > 0) {
+          const standardKeys = ['name', 'email', 'company', 'is_qualified']
+          const notes = []
+
+          // Iterar sobre todos los datos adicionales
+          for (const [key, value] of Object.entries(leadData)) {
+            if (!standardKeys.includes(key) && value !== null && value !== undefined && value !== '') {
+              // Formatear la llave (ej: 'shoe_size' -> 'Shoe Size')
+              const formattedKey = key
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, (c) => c.toUpperCase())
+              notes.push(`${formattedKey}: ${value}`)
+            }
+          }
+          
+          await db.from('deals').insert({
+            account_id: accountId,
+            user_id: configOwnerUserId,
+            pipeline_id: stages[0].pipeline_id,
+            stage_id: stages[0].id,
+            contact_id: contactId,
+            conversation_id: conversationId,
+            title: `Nuevo Lead - ${leadData.name || leadData.company || 'Sin nombre'}`,
+            value: 0,
+            notes: notes.length > 0 ? notes.join('\n') : null,
+            status: 'open',
+          })
+        }
+      } catch (err) {
+        console.error('[ai auto-reply] Error guardando datos del lead:', err)
+      }
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
