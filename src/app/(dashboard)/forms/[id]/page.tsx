@@ -207,9 +207,28 @@ export default function FormEditorPage() {
     )
   }
 
-  const embedCode = formId
-    ? `<iframe src="${typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL ?? ''}/f/${formId}" width="100%" height="600" frameborder="0" style="background: transparent; border: 1px solid #e5e7eb; border-radius: 8px;"></iframe>`
-    : ""
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL ?? '')
+  const embedCode = formId ? `<!-- NeoWapp Form Widget -->
+<div id="nw-form-${formId}"></div>
+<script>
+(function(){
+  var fid="${formId}",cid="nw-form-"+fid;
+  var c=document.getElementById(cid);if(!c)return;
+  var f=document.createElement("iframe");
+  f.src="${appUrl}/f/"+fid;
+  f.id="nw-iframe-"+fid;
+  f.style.cssText="width:100%;border:none;display:block;min-height:400px;transition:height 0.2s ease;";
+  f.setAttribute("frameborder","0");
+  f.setAttribute("scrolling","no");
+  f.setAttribute("allowtransparency","true");
+  c.appendChild(f);
+  window.addEventListener("message",function(e){
+    if(e.data&&e.data.type==="nw-form-resize"&&e.data.formId===fid){
+      f.style.height=(e.data.height+24)+"px";
+    }
+  });
+})();
+<\/script>` : ""
 
   const fieldLabels: Record<string, string> = {
     name: "Nombre",
@@ -441,22 +460,23 @@ export default function FormEditorPage() {
               Copia este código y pégalo en cualquier lugar del HTML de tu sitio web donde desees que aparezca el formulario.
             </DialogDescription>
           </DialogHeader>
-          <div className="relative mt-4">
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="flex justify-end">
+              <Button 
+                size="sm" 
+                onClick={() => {
+                  navigator.clipboard.writeText(embedCode)
+                  toast.success("Código copiado al portapapeles")
+                }}
+              >
+                <Copy className="mr-2 h-4 w-4" /> Copiar Código
+              </Button>
+            </div>
             <Textarea 
-              className="font-mono text-xs min-h-[120px]" 
+              className="font-mono text-xs h-[320px] resize-none whitespace-pre overflow-auto bg-gray-50/50" 
               readOnly 
               value={embedCode} 
             />
-            <Button 
-              size="sm" 
-              className="absolute right-2 top-2"
-              onClick={() => {
-                navigator.clipboard.writeText(embedCode)
-                toast.success("Código copiado al portapapeles")
-              }}
-            >
-              <Copy className="mr-2 h-3 w-3" /> Copiar
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

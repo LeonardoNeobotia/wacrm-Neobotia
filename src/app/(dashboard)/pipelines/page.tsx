@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
+import { GitBranch, Plus, ChevronDown, Settings, Filter, Search, ArrowDownUp } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
@@ -69,6 +69,13 @@ export default function PipelinesPage() {
   const [dealFormOpen, setDealFormOpen] = useState(false);
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   const [defaultStageId, setDefaultStageId] = useState<string>("");
+
+  // Filter & Search state
+  const [filterStatus, setFilterStatus] = useState<string>("open"); // By default show open
+  const [filterOwnerId, setFilterOwnerId] = useState<string>("all");
+  const [filterDate, setFilterDate] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortBy, setSortBy] = useState<string>("newest");
 
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
@@ -297,6 +304,80 @@ export default function PipelinesPage() {
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
 
+  // Computed state for filters
+  const uniqueAssignees = useMemo(() => {
+    const map = new Map();
+    deals.forEach(deal => {
+      if (deal.assignee) {
+        map.set(deal.assignee.id, deal.assignee);
+      }
+    });
+    return Array.from(map.values());
+  }, [deals]);
+
+  const filteredDeals = useMemo(() => {
+    let result = deals.filter(deal => {
+      // 1. Status Filter
+      if (filterStatus !== "all" && deal.status !== filterStatus) return false;
+      
+      // 2. Owner Filter
+      if (filterOwnerId === "unassigned") {
+        if (deal.assigned_to) return false;
+      } else if (filterOwnerId !== "all") {
+        if (deal.assigned_to !== filterOwnerId) return false;
+      }
+      
+      // 3. Date Filter
+      if (filterDate !== "all") {
+        const dealDate = new Date(deal.created_at);
+        const closeDate = deal.expected_close_date ? new Date(deal.expected_close_date) : null;
+        const now = new Date();
+        const thisMonth = now.getMonth();
+        const thisYear = now.getFullYear();
+
+        if (filterDate === "created_today") {
+          if (dealDate.toDateString() !== now.toDateString()) return false;
+        } else if (filterDate === "created_this_week") {
+          const firstDay = new Date(now.setDate(now.getDate() - now.getDay()));
+          if (dealDate < firstDay) return false;
+        } else if (filterDate === "created_this_month") {
+          if (dealDate.getMonth() !== thisMonth || dealDate.getFullYear() !== thisYear) return false;
+        } else if (filterDate === "created_last_month") {
+          const lastMonth = new Date(thisYear, thisMonth - 1, 1);
+          const currentMonthDate = new Date(thisYear, thisMonth, 1);
+          if (dealDate < lastMonth || dealDate >= currentMonthDate) return false;
+        } else if (filterDate === "created_this_quarter") {
+          const currentQuarter = Math.floor(thisMonth / 3);
+          const dealQuarter = Math.floor(dealDate.getMonth() / 3);
+          if (dealQuarter !== currentQuarter || dealDate.getFullYear() !== thisYear) return false;
+        } else if (filterDate === "closes_this_month") {
+          if (!closeDate || closeDate.getMonth() !== thisMonth || closeDate.getFullYear() !== thisYear) return false;
+        }
+      }
+      
+      // 4. Search Filter
+      if (searchQuery.trim() !== "") {
+        const query = searchQuery.toLowerCase();
+        const titleMatch = deal.title?.toLowerCase().includes(query);
+        const contactMatch = deal.contact?.name?.toLowerCase().includes(query);
+        if (!titleMatch && !contactMatch) return false;
+      }
+      
+      return true;
+    });
+
+    // 5. Sort
+    if (sortBy === "value_desc") {
+      result.sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+    } else if (sortBy === "newest") {
+      result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    } else if (sortBy === "oldest") {
+      result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    }
+
+    return result;
+  }, [deals, filterStatus, filterOwnerId, filterDate, searchQuery, sortBy]);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -412,10 +493,109 @@ export default function PipelinesPage() {
         </div>
       ) : (
         <>
-          <PipelineAnalytics stages={stages} deals={deals} />
+          {/* Barra de Búsqueda y Filtros */}
+          <div className="mb-6 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+            
+            {/* Buscador (Izquierda) */}
+            <div className="relative w-full xl:w-[350px] flex-shrink-0">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar trato o contacto..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 w-full bg-background shadow-sm transition-colors hover:bg-accent/20 focus:bg-background"
+              />
+            </div>
+
+            {/* Filtros (Derecha) */}
+            <div className="flex w-full xl:w-auto flex-wrap items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                  <Filter className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="hidden sm:inline-block mr-1 text-muted-foreground font-normal">Fecha:</span>
+                  {filterDate === "all" ? "Todas" : filterDate === "created_today" ? "Creado hoy" : filterDate === "created_this_week" ? "Esta semana" : filterDate === "created_this_month" ? "Este mes" : filterDate === "created_last_month" ? "Mes pasado" : filterDate === "created_this_quarter" ? "Este trimestre" : "Cierra este mes"}
+                  <ChevronDown className="ml-2 h-3 w-3 text-muted-foreground opacity-50" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[180px]">
+                  <DropdownMenuItem onClick={() => setFilterDate("all")}>Cualquier fecha</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setFilterDate("created_today")}>Creados Hoy</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterDate("created_this_week")}>Creados Esta semana</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterDate("created_this_month")}>Creados Este mes</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterDate("created_last_month")}>Creados Mes pasado</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterDate("created_this_quarter")}>Creados Este trimestre</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setFilterDate("closes_this_month")}>Cierran Este mes</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                  <span className="hidden sm:inline-block mr-1 text-muted-foreground font-normal">Estado:</span>
+                  {filterStatus === "all" ? "Todos" : filterStatus === "open" ? "Abiertos" : filterStatus === "won" ? "Ganados" : "Perdidos"}
+                  <ChevronDown className="ml-2 h-3 w-3 text-muted-foreground opacity-50" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[140px]">
+                  <DropdownMenuItem onClick={() => setFilterStatus("all")}>Todos</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setFilterStatus("open")}>Abiertos</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterStatus("won")}>Ganados</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterStatus("lost")}>Perdidos</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                  <span className="hidden sm:inline-block mr-1 text-muted-foreground font-normal">De:</span>
+                  <span className="max-w-[100px] truncate">
+                    {filterOwnerId === "all" ? "Cualquiera" : filterOwnerId === "unassigned" ? "Sin asignar" : uniqueAssignees.find(u => u.id === filterOwnerId)?.full_name || "Usuario"}
+                  </span>
+                  <ChevronDown className="ml-2 h-3 w-3 text-muted-foreground opacity-50" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[180px]">
+                  <DropdownMenuItem onClick={() => setFilterOwnerId("all")}>Cualquier propietario</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterOwnerId("unassigned")}>Sin asignar</DropdownMenuItem>
+                  {uniqueAssignees.length > 0 && <DropdownMenuSeparator />}
+                  {uniqueAssignees.map(user => (
+                    <DropdownMenuItem key={user.id} onClick={() => setFilterOwnerId(user.id)}>
+                      {user.full_name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                  <ArrowDownUp className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                  {sortBy === "newest" ? "Más recientes" : sortBy === "oldest" ? "Más antiguos" : "Mayor valor"}
+                  <ChevronDown className="ml-2 h-3 w-3 text-muted-foreground opacity-50" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[180px]">
+                  <DropdownMenuItem onClick={() => setSortBy("newest")}>Más recientes primero</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy("oldest")}>Más antiguos primero</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setSortBy("value_desc")}>Valor (Mayor a menor)</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Botón de limpiar filtros (solo aparece si hay algo activo) */}
+              {(filterStatus !== "open" || filterOwnerId !== "all" || filterDate !== "all" || searchQuery !== "" || sortBy !== "newest") && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => { setFilterStatus("open"); setFilterOwnerId("all"); setFilterDate("all"); setSearchQuery(""); setSortBy("newest"); }}
+                  className="h-9 px-3 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Limpiar
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <PipelineAnalytics stages={stages} deals={filteredDeals} />
           <PipelineBoard
             stages={stages}
-            deals={deals}
+            deals={filteredDeals}
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}

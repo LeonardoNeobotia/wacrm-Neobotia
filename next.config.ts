@@ -151,11 +151,23 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Security headers on every response, including /_next/static
-        // assets (nosniff matters there) and /api/* (HSTS + referrer-
-        // policy don't hurt).
+        // Seguridad en todas las rutas generales
         source: "/:path*",
         headers: [...SECURITY_HEADERS],
+      },
+      {
+        // Las rutas /f/* son formularios públicos incrustables en iframes externos.
+        // Sobreescribimos X-Frame-Options y frame-ancestors para permitir el embed.
+        source: "/f/:id*",
+        headers: [
+          // ALLOW-FROM no es estándar en navegadores modernos; eliminar el header
+          // es el enfoque correcto cuando se quiere permitir embedding general.
+          { key: "X-Frame-Options", value: "ALLOWALL" },
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors *",
+          },
+        ],
       },
     ];
   },
