@@ -368,7 +368,8 @@
         "email": "Correo electrónico",
         "company": "Compañía",
         "tags": "Etiquetas",
-        "createdAt": "Creado"
+        "createdAt": "Creado",
+        "lastActivity": "Última actividad"
       },
       "loading": "Cargando contactos...",
       "noContactsMatch": "Ningún contacto coincide con tus filtros.",

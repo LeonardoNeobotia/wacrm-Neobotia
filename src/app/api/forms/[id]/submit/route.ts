@@ -7,184 +7,332 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
 }
 
+/**
+ * Normaliza un numero telefonico eliminando duplicaciones de codigo de pais
+ * (como +56569... generado al concatenar el prefijo dos veces) y dandole formato internacional E.164 (+...).
+ */
+function sanitizeAndNormalizePhone(rawPhone?: string | null): string {
+	if (!rawPhone) return ""
+	const cleaned = rawPhone.trim().replace(/[^\d+]/g, "")
+	if (!cleaned) return ""
+
+	let digits = cleaned.replace(/\D/g, "")
+
+	// Caso especifico de duplicacion de prefijo Chile (+56569... o 56569...)
+	if (digits.startsWith("5656")) {
+		digits = digits.slice(2) // Removemos el 56 redundante
+	}
+
+	// Caso general: duplicacion de codigo de pais comun
+	for (const cc of ["56", "54", "57", "52", "51", "58", "55", "593", "591", "595", "598"]) {
+		if (digits.startsWith(cc + cc) && digits.length >= cc.length * 2 + 7) {
+			digits = digits.slice(cc.length)
+			break
+		}
+	}
+
+	// Si es un numero celular chileno de 9 digitos sin codigo de pais (ej: 912345678)
+	if (digits.length === 9 && digits.startsWith("9")) {
+		return `+56${digits}`
+	}
+
+	// Si es un numero fijo chileno de 8 digitos
+	if (digits.length === 8 && /^[2-8]/.test(digits)) {
+		return `+56${digits}`
+	}
+
+	return `+${digits}`
+}
+
 export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+	req: NextRequest,
+	{ params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const p = await params
-    const id = p.id
-    const body = await req.json()
+	try {
+		const p = await params
+		const id = p.id
+		const body = await req.json()
 
-    // Service role para escribir sin autenticacion del visitante
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+		// Service role para escribir sin autenticacion del visitante
+		const supabase = createClient(
+			process.env.NEXT_PUBLIC_SUPABASE_URL!,
+			process.env.SUPABASE_SERVICE_ROLE_KEY!
+		)
 
-    // 1. Obtener configuracion del formulario
-    const { data: form, error: formError } = await supabase
-      .from("web_forms")
-      .select("*")
-      .eq("id", id)
-      .eq("is_active", true)
-      .single()
+		// 1. Obtener configuracion del formulario
+		const { data: form, error: formError } = await supabase
+			.from("web_forms")
+			.select("*")
+			.eq("id", id)
+			.eq("is_active", true)
+			.single()
 
-    if (formError || !form) {
-      console.error("[forms/submit] Formulario no encontrado:", formError)
-      return NextResponse.json(
-        { error: "Formulario no encontrado o inactivo" },
-        { status: 404, headers: corsHeaders }
-      )
-    }
+		if (formError || !form) {
+			console.error("[forms/submit] Formulario no encontrado:", formError)
+			return NextResponse.json(
+				{ error: "Formulario no encontrado o inactivo" },
+				{ status: 404, headers: corsHeaders }
+			)
+		}
 
-    const { account_id, pipeline_id, stage_id } = form
-    const { name, email, phone, company } = body
+		const { account_id, pipeline_id, stage_id } = form
 
-    // 2. Buscar contacto existente por email o telefono
-    let contactId: string | null = null
+		// Mapeo flexible de datos principales para soportar espanol, ingles o formularios externos
+		const name = (body.name || body.nombre || body.full_name || body.fullName || "").trim()
+		const email = (body.email || body.correo || body.mail || "").trim()
+		const rawPhone = (body.phone || body.telefono || body.phone_number || body.celular || body.tel || "").trim()
+		const company = (body.company || body.empresa || body.organization || "").trim()
 
-    if (email) {
-      const { data: existEmail } = await supabase
-        .from("contacts")
-        .select("id, name")
-        .eq("account_id", account_id)
-        .eq("email", email)
-        .limit(1)
-      if (existEmail && existEmail.length > 0) {
-        contactId = existEmail[0].id
-      }
-    }
+		// Normalizacion del telefono evitando prefijos duplicados (+56569... -> +569...)
+		const normalizedPhone = sanitizeAndNormalizePhone(rawPhone)
+		const digitsOnlyPhone = normalizedPhone.replace(/\D/g, "")
 
-    if (!contactId && phone) {
-      const normalizedPhone = phone.replace(/\D/g, "")
-      const { data: existPhone } = await supabase
-        .from("contacts")
-        .select("id, name")
-        .eq("account_id", account_id)
-        .eq("phone_normalized", normalizedPhone)
-        .limit(1)
-      if (existPhone && existPhone.length > 0) {
-        contactId = existPhone[0].id
-      }
-    }
+		// 2. Buscar contacto existente por email o telefono
+		let contactId: string | null = null
 
-    // 3. Obtener el owner de la cuenta (contacts.user_id es NOT NULL)
-    const { data: account, error: accountError } = await supabase
-      .from("accounts")
-      .select("owner_user_id")
-      .eq("id", account_id)
-      .single()
+		if (email) {
+			const { data: existEmail } = await supabase
+				.from("contacts")
+				.select("id, name")
+				.eq("account_id", account_id)
+				.eq("email", email)
+				.limit(1)
+			if (existEmail && existEmail.length > 0) {
+				contactId = existEmail[0].id
+			}
+		}
 
-    if (accountError || !account?.owner_user_id) {
-      console.error("[forms/submit] No se encontro owner_user_id:", accountError)
-      return NextResponse.json(
-        { error: "No pudimos procesar tu solicitud. Por favor intenta nuevamente." },
-        { status: 500, headers: corsHeaders }
-      )
-    }
+		if (!contactId && digitsOnlyPhone) {
+			const suffix = digitsOnlyPhone.length >= 8 ? digitsOnlyPhone.slice(-8) : digitsOnlyPhone
+			const { data: existPhone } = await supabase
+				.from("contacts")
+				.select("id, name, phone")
+				.eq("account_id", account_id)
+				.or(`phone_normalized.eq.${digitsOnlyPhone},phone.like.%${suffix}`)
+				.limit(1)
+			if (existPhone && existPhone.length > 0) {
+				contactId = existPhone[0].id
+			}
+		}
 
-    const ownerUserId = account.owner_user_id
+		// 3. Obtener el owner de la cuenta (contacts.user_id es NOT NULL)
+		const { data: account, error: accountError } = await supabase
+			.from("accounts")
+			.select("owner_user_id")
+			.eq("id", account_id)
+			.single()
 
-    // 4. Crear o actualizar contacto
-    if (contactId) {
-      // Contacto ya existe: actualizamos solo los campos presentes
-      const updateData: Record<string, string> = {}
-      if (name) updateData.name = name
-      if (email) updateData.email = email
-      if (phone) updateData.phone = phone
-      if (company) updateData.company = company
+		if (accountError || !account?.owner_user_id) {
+			console.error("[forms/submit] No se encontro owner_user_id:", accountError)
+			return NextResponse.json(
+				{ error: "No pudimos procesar tu solicitud. Por favor intenta nuevamente." },
+				{ status: 500, headers: corsHeaders }
+			)
+		}
 
-      if (Object.keys(updateData).length > 0) {
-        const { error: updateError } = await supabase
-          .from("contacts")
-          .update(updateData)
-          .eq("id", contactId)
-        if (updateError) {
-          console.error("[forms/submit] Error al actualizar contacto:", updateError)
-        }
-      }
-    } else {
-      // Crear nuevo contacto
-      // phone es NOT NULL en la tabla — usamos marcador si no vino en el formulario
-      const phoneValue = phone?.trim() || `nw_form_${Date.now()}`
+		const ownerUserId = account.owner_user_id
 
-      const { data: newContact, error: insertError } = await supabase
-        .from("contacts")
-        .insert({
-          account_id,
-          user_id: ownerUserId,
-          name: name?.trim() || "Web Lead",
-          email: email?.trim() || null,
-          phone: phoneValue,
-          company: company?.trim() || null,
-        })
-        .select("id")
-        .single()
+		// 4. Crear o actualizar contacto
+		if (contactId) {
+			// Contacto ya existe: actualizamos solo los campos presentes
+			const updateData: Record<string, string> = {}
+			if (name) updateData.name = name
+			if (email) updateData.email = email
+			if (normalizedPhone) updateData.phone = normalizedPhone
+			if (company) updateData.company = company
 
-      if (insertError) {
-        console.error("[forms/submit] Error al insertar contacto:", JSON.stringify(insertError))
-        return NextResponse.json(
-          { error: "No pudimos guardar tu información. Por favor intenta nuevamente." },
-          { status: 500, headers: corsHeaders }
-        )
-      }
+			if (Object.keys(updateData).length > 0) {
+				const { error: updateError } = await supabase
+					.from("contacts")
+					.update(updateData)
+					.eq("id", contactId)
+				if (updateError) {
+					console.error("[forms/submit] Error al actualizar contacto:", updateError)
+				}
+			}
+		} else {
+			// Crear nuevo contacto
+			// phone es NOT NULL en la tabla: usamos marcador si no vino en el formulario
+			const phoneValue = normalizedPhone || `nw_form_${Date.now()}`
 
-      contactId = newContact.id
-    }
+			const { data: newContact, error: insertError } = await supabase
+				.from("contacts")
+				.insert({
+					account_id,
+					user_id: ownerUserId,
+					name: name || "Web Lead",
+					email: email || null,
+					phone: phoneValue,
+					company: company || null,
+				})
+				.select("id")
+				.single()
 
-    // 4. Formatear campos personalizados como texto de nota
-    let customNotes = ""
-    if (form.fields_config?.custom?.length > 0) {
-      customNotes = form.fields_config.custom
-        .map((cf: { id: string; label: string }) =>
-          `${cf.label}: ${(body[cf.id] as string)?.trim() || "No proporcionado"}`
-        )
-        .join("\n\n")
-    }
+			if (insertError) {
+				console.error("[forms/submit] Error al insertar contacto:", JSON.stringify(insertError))
+				return NextResponse.json(
+					{ error: "No pudimos guardar tu información. Por favor intenta nuevamente." },
+					{ status: 500, headers: corsHeaders }
+				)
+			}
 
-    // 5. Crear negociacion (Deal) si hay pipeline configurado
-    if (pipeline_id && stage_id && contactId) {
-      const dealTitle = `Web Lead - ${company || name || email || phone || "Sin nombre"}`
+			contactId = newContact.id
+		}
 
-      const { error: dealError } = await supabase.from("deals").insert({
-        account_id,
-        user_id: ownerUserId,
-        pipeline_id,
-        stage_id,
-        contact_id: contactId,
-        title: dealTitle,
-        value: 0,
-        currency: "USD",
-        status: "open",
-        notes: customNotes || null,
-      })
+		// 5. Captura exhaustiva de campos personalizados (Asunto, Mensaje y otros)
+		let asunto = (body.asunto || body.subject || body.motivo || "").trim()
+		let mensaje = (body.mensaje || body.message || body.comentario || body.comments || body.consulta || "").trim()
 
-      if (dealError) {
-        // No es error critico: el contacto ya fue creado, solo registramos
-        console.error("[forms/submit] Error al crear deal:", JSON.stringify(dealError))
-      }
-    } else if (customNotes && contactId) {
-      // Sin pipeline: guardamos las respuestas como nota del contacto
-      const { error: noteError } = await supabase.from("contact_notes").insert({
-        contact_id: contactId,
-        user_id: ownerUserId,
-        note_text: customNotes,
-      })
-      if (noteError) {
-        console.error("[forms/submit] Error al insertar nota:", JSON.stringify(noteError))
-      }
-    }
+		// Si no vinieron con nombres directos, buscar en fields_config.custom por label
+		if (Array.isArray(form.fields_config?.custom)) {
+			for (const cf of form.fields_config.custom) {
+				const cfLabelLower = (cf.label || "").toLowerCase().trim()
+				const val = (body[cf.id] ?? body[cf.label] ?? "")
+				const valStr = String(val).trim()
+				if (!asunto && (cfLabelLower === "asunto" || cfLabelLower === "subject" || cfLabelLower.includes("asunto"))) {
+					asunto = valStr
+				}
+				if (!mensaje && (cfLabelLower === "mensaje" || cfLabelLower === "message" || cfLabelLower.includes("mensaje") || cfLabelLower.includes("consulta"))) {
+					mensaje = valStr
+				}
+			}
+		}
 
-    return NextResponse.json({ success: true }, { headers: corsHeaders })
+		const customEntries: { label: string; value: string }[] = []
 
-  } catch (error: any) {
-    console.error("[forms/submit] Error inesperado:", error)
-    return NextResponse.json(
-      { error: "Ocurrió un error inesperado. Por favor intenta más tarde." },
-      { status: 500, headers: corsHeaders }
-    )
-  }
+		if (asunto) {
+			customEntries.push({ label: "Asunto", value: asunto })
+		}
+		if (mensaje) {
+			customEntries.push({ label: "Mensaje", value: mensaje })
+		}
+
+		// Campos estandar para descartar al capturar campos adicionales
+		const standardKeys = new Set([
+			"name", "nombre", "full_name", "fullName",
+			"email", "correo", "mail",
+			"phone", "telefono", "phone_number", "celular", "tel",
+			"company", "empresa", "organization",
+			"asunto", "subject", "motivo",
+			"mensaje", "message", "comentario", "comments", "consulta",
+			"cf-turnstile-response", "turnstile", "token", "formId", "g-recaptcha-response"
+		])
+
+		// Evaluar otros campos configurados en form.fields_config.custom
+		if (Array.isArray(form.fields_config?.custom)) {
+			for (const cf of form.fields_config.custom) {
+				const cfLabelLower = (cf.label || "").toLowerCase().trim()
+				if (cfLabelLower === "asunto" || cfLabelLower === "subject" || cfLabelLower.includes("asunto")) continue
+				if (cfLabelLower === "mensaje" || cfLabelLower === "message" || cfLabelLower.includes("mensaje") || cfLabelLower.includes("consulta")) continue
+
+				const val = (body[cf.id] ?? body[cf.label] ?? body[cfLabelLower] ?? "")
+				const valStr = String(val).trim()
+				if (valStr) {
+					customEntries.push({ label: cf.label || cf.id, value: valStr })
+				}
+			}
+		}
+
+		// Capturar otros campos dinamicos adicionales no estandar enviados por el frontend
+		for (const [key, rawVal] of Object.entries(body)) {
+			if (standardKeys.has(key)) continue
+			if (Array.isArray(form.fields_config?.custom) && form.fields_config.custom.some((cf: any) => cf.id === key)) {
+				continue
+			}
+			const valStr = String(rawVal ?? "").trim()
+			if (valStr) {
+				const formattedLabel = key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())
+				customEntries.push({ label: formattedLabel, value: valStr })
+			}
+		}
+
+		// Formatear resumen para notas y negociacion
+		let customNotes = ""
+		if (customEntries.length > 0) {
+			customNotes = customEntries
+				.map(entry => `${entry.label}: ${entry.value}`)
+				.join("\n\n")
+		}
+
+		// 6. Crear negociacion (Deal) si hay pipeline configurado
+		let createdDealId: string | null = null
+		if (pipeline_id && stage_id && contactId) {
+			const dealTitle = asunto
+				? `${asunto} - ${company || name || "Lead Web"}`
+				: `Web Lead - ${company || name || email || normalizedPhone || "Sin nombre"}`
+
+			// Calcular fecha estimada de cierre a 3 meses desde hoy (YYYY-MM-DD)
+			const closeDate = new Date()
+			closeDate.setMonth(closeDate.getMonth() + 3)
+			const expectedCloseDate = closeDate.toISOString().split("T")[0]
+
+			const { data: newDeal, error: dealError } = await supabase.from("deals").insert({
+				account_id,
+				user_id: ownerUserId,
+				pipeline_id,
+				stage_id,
+				contact_id: contactId,
+				title: dealTitle,
+				value: 0,
+				currency: "CLP",
+				expected_close_date: expectedCloseDate,
+				status: "open",
+				notes: customNotes || null,
+			}).select("id").single()
+
+			if (dealError) {
+				console.error("[forms/submit] Error al crear deal:", JSON.stringify(dealError))
+			} else if (newDeal) {
+				createdDealId = newDeal.id
+			}
+		}
+
+		// 7. Guardar SIEMPRE en contact_notes para visibilidad inmediata en el CRM (Ficha de contacto e Inbox)
+		if (customNotes && contactId) {
+			const formTitle = form.title || form.name || "Contacto Web"
+			const fullNoteText = `[Formulario: ${formTitle}]\n\n${customNotes}`
+
+			const { error: noteError } = await supabase.from("contact_notes").insert({
+				account_id,
+				contact_id: contactId,
+				user_id: ownerUserId,
+				note_text: fullNoteText,
+			})
+			if (noteError) {
+				console.error("[forms/submit] Error al insertar nota en contacto:", JSON.stringify(noteError))
+			}
+		}
+
+		// 8. Registrar envio en web_form_submissions para auditoria y trazabilidad de eventos
+		try {
+			const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || null
+			const userAgent = req.headers.get("user-agent") || null
+
+			const { error: subError } = await supabase.from("web_form_submissions").insert({
+				account_id,
+				form_id: id,
+				contact_id: contactId || null,
+				deal_id: createdDealId || null,
+				data: body,
+				ip_address: clientIp,
+				user_agent: userAgent,
+			})
+			if (subError) {
+				console.warn("[forms/submit] Advertencia al registrar submission en BD:", subError.message)
+			}
+		} catch (subErr) {
+			console.warn("[forms/submit] Excepcion al registrar submission:", subErr)
+		}
+
+		return NextResponse.json({ success: true }, { headers: corsHeaders })
+
+	} catch (error: any) {
+		console.error("[forms/submit] Error inesperado:", error)
+		return NextResponse.json(
+			{ error: error?.message || "Ocurrió un error inesperado.", stack: error?.stack },
+			{ status: 500, headers: corsHeaders }
+		)
+	}
 }
 
 // Soporte CORS para sitios externos

@@ -24,8 +24,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings, Filter, Search, ArrowDownUp } from "lucide-react";
 import { toast } from "sonner";
+import {
+  GitBranch,
+  Plus,
+  ChevronDown,
+  Settings,
+  Filter,
+  Search,
+  ArrowDownUp,
+  Trash2,
+  CheckSquare,
+  Square,
+  Loader2,
+} from "lucide-react";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -76,6 +88,11 @@ export default function PipelinesPage() {
   const [filterDate, setFilterDate] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("newest");
+
+  // Selection & Bulk CRUD state
+  const [selectedDealIds, setSelectedDealIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
@@ -378,6 +395,56 @@ export default function PipelinesPage() {
     return result;
   }, [deals, filterStatus, filterOwnerId, filterDate, searchQuery, sortBy]);
 
+  // Bulk Selection Handlers
+  const handleToggleSelectDeal = useCallback((dealId: string) => {
+    setSelectedDealIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(dealId)) {
+        next.delete(dealId);
+      } else {
+        next.add(dealId);
+      }
+      return next;
+    });
+  }, []);
+
+  const isAllFilteredSelected = useMemo(() => {
+    if (filteredDeals.length === 0) return false;
+    return filteredDeals.every((d) => selectedDealIds.has(d.id));
+  }, [filteredDeals, selectedDealIds]);
+
+  const handleToggleSelectAll = useCallback(() => {
+    if (isAllFilteredSelected) {
+      setSelectedDealIds(new Set());
+    } else {
+      setSelectedDealIds(new Set(filteredDeals.map((d) => d.id)));
+    }
+  }, [isAllFilteredSelected, filteredDeals]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedDealIds(new Set());
+  }, []);
+
+  async function handleBulkDelete() {
+    if (selectedDealIds.size === 0) return;
+    setBulkDeleting(true);
+    const idsToDelete = Array.from(selectedDealIds);
+
+    const { error } = await supabase.from("deals").delete().in("id", idsToDelete);
+
+    setBulkDeleting(false);
+    if (error) {
+      console.error("Error al eliminar negociaciones:", error);
+      toast.error("Error al eliminar las negociaciones");
+      return;
+    }
+
+    toast.success(`Se eliminaron ${idsToDelete.length} negociaciones`);
+    setSelectedDealIds(new Set());
+    setBulkDeleteDialogOpen(false);
+    await refreshDeals();
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -578,6 +645,23 @@ export default function PipelinesPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
+              {/* Botón Seleccionar Todos */}
+              <Button
+                variant={isAllFilteredSelected ? "secondary" : "outline"}
+                size="sm"
+                onClick={handleToggleSelectAll}
+                title="Seleccionar o deseleccionar todas las negociaciones visibles"
+                className="h-9 px-3 text-sm border-border bg-background shadow-sm hover:bg-accent"
+              >
+                {isAllFilteredSelected ? (
+                  <CheckSquare className="mr-1.5 h-4 w-4 text-primary" />
+                ) : (
+                  <Square className="mr-1.5 h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="hidden sm:inline">Seleccionar todos</span>
+                <span className="ml-1 text-xs opacity-75">({filteredDeals.length})</span>
+              </Button>
+
               {/* Botón de limpiar filtros (solo aparece si hay algo activo) */}
               {(filterStatus !== "open" || filterOwnerId !== "all" || filterDate !== "all" || searchQuery !== "" || sortBy !== "newest") && (
                 <Button 
@@ -592,6 +676,52 @@ export default function PipelinesPage() {
             </div>
           </div>
 
+          {/* Barra de Acciones Masivas */}
+          {selectedDealIds.size > 0 && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center gap-3">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-sm">
+                  {selectedDealIds.size}
+                </span>
+                <span className="text-sm font-medium text-foreground">
+                  {selectedDealIds.size === 1
+                    ? "1 negociación seleccionada"
+                    : `${selectedDealIds.size} negociaciones seleccionadas`}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleToggleSelectAll}
+                  className="h-8 text-xs text-primary hover:text-primary hover:bg-primary/20"
+                >
+                  {isAllFilteredSelected
+                    ? "Deseleccionar todas"
+                    : `Seleccionar todas (${filteredDeals.length})`}
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearSelection}
+                  className="h-8 text-xs border-border bg-background hover:bg-muted"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkDeleteDialogOpen(true)}
+                  className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white shadow-sm"
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Borrar seleccionadas
+                </Button>
+              </div>
+            </div>
+          )}
+
           <PipelineAnalytics stages={stages} deals={filteredDeals} />
           <PipelineBoard
             stages={stages}
@@ -599,9 +729,54 @@ export default function PipelinesPage() {
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}
+            selectedDealIds={selectedDealIds}
+            onToggleSelectDeal={handleToggleSelectDeal}
+            selectionMode={selectedDealIds.size > 0}
           />
         </>
       )}
+
+      {/* Bulk Delete Confirm Dialog */}
+      <Dialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-popover border-border">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              ¿Eliminar {selectedDealIds.size} negociaciones?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 text-sm text-muted-foreground">
+            Esta acción no se puede deshacer. Las {selectedDealIds.size} negociaciones seleccionadas se eliminarán permanentemente de este embudo.
+          </div>
+          <DialogFooter className="bg-popover/50 border-border gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkDeleteDialogOpen(false)}
+              disabled={bulkDeleting}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {bulkDeleting ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Eliminar permanentemente
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* New Pipeline Dialog */}
       <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen}>

@@ -356,7 +356,8 @@
         "email": "Email",
         "company": "Company",
         "tags": "Tags",
-        "createdAt": "Created"
+        "createdAt": "Created",
+        "lastActivity": "Last Activity"
       },
       "loading": "Loading contacts...",
       "noContactsMatch": "No contacts match your filters.",

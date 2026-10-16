@@ -9,6 +9,7 @@ import {
   Radio,
   Zap,
   Inbox,
+  ClipboardList,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { ActivityItem, ActivityKind } from '@/lib/dashboard/types'
@@ -36,6 +37,7 @@ const KIND_THEME: Record<ActivityKind, KindTheme> = {
   deal: { icon: Briefcase, badge: 'bg-primary/10 text-primary' },
   broadcast: { icon: Radio, badge: 'bg-amber-500/10 text-amber-400' },
   automation: { icon: Zap, badge: 'bg-rose-500/10 text-rose-400' },
+  form: { icon: ClipboardList, badge: 'bg-emerald-500/10 text-emerald-400' },
 }
 
 import { useTranslations } from 'next-intl'

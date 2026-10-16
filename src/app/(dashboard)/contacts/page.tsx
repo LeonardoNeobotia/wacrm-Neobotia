@@ -61,7 +61,30 @@ import { useTranslations } from 'next-intl';
 const PAGE_SIZE = 25;
 
 interface ContactWithTags extends Contact {
-  tags?: Tag[];
+	tags?: Tag[];
+	last_activity_at?: string;
+}
+
+/**
+ * Formatea una fecha ISO a fecha (DD/MM/YYYY) y hora (HH:mm) en la zona horaria local.
+ */
+function formatDateTime(dateStr?: string | null) {
+	if (!dateStr) return { date: '-', time: '' };
+	try {
+		const d = new Date(dateStr);
+		if (isNaN(d.getTime())) return { date: '-', time: '' };
+		const day = String(d.getDate()).padStart(2, '0');
+		const month = String(d.getMonth() + 1).padStart(2, '0');
+		const year = d.getFullYear();
+		const hours = String(d.getHours()).padStart(2, '0');
+		const minutes = String(d.getMinutes()).padStart(2, '0');
+		return {
+			date: `${day}/${month}/${year}`,
+			time: `${hours}:${minutes}`,
+		};
+	} catch {
+		return { date: '-', time: '' };
+	}
 }
 
 export default function ContactsPage() {
@@ -184,29 +207,87 @@ export default function ContactsPage() {
       return;
     }
 
-    // Fetch tags for these contacts
-    const contactIds = contactRows.map((c) => c.id);
-    const { data: contactTags } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tag_id')
-      .in('contact_id', contactIds);
-    if (seq !== fetchSeq.current) return; // superseded by a newer fetch
+		// Obtener etiquetas y rastros de actividad (conversaciones, tratos, notas) para estos contactos
+		const contactIds = contactRows.map((c) => c.id);
+		const [tagsRes, convsRes, dealsRes, notesRes] = await Promise.all([
+			supabase
+				.from('contact_tags')
+				.select('contact_id, tag_id')
+				.in('contact_id', contactIds),
+			supabase
+				.from('conversations')
+				.select('contact_id, last_message_at, updated_at')
+				.in('contact_id', contactIds),
+			supabase
+				.from('deals')
+				.select('contact_id, updated_at')
+				.in('contact_id', contactIds),
+			supabase
+				.from('contact_notes')
+				.select('contact_id, created_at')
+				.in('contact_id', contactIds),
+		]);
+		if (seq !== fetchSeq.current) return; // superseded by a newer fetch
 
-    const tagsByContact: Record<string, string[]> = {};
-    contactTags?.forEach((ct) => {
-      if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
-      tagsByContact[ct.contact_id].push(ct.tag_id);
-    });
+		const contactTags = tagsRes.data;
+		const conversations = convsRes.data;
+		const deals = dealsRes.data;
+		const notes = notesRes.data;
 
-    const enriched: ContactWithTags[] = contactRows.map((c) => ({
-      ...c,
-      tags: (tagsByContact[c.id] ?? [])
-        .map((tid) => tagsMap[tid])
-        .filter(Boolean),
-    }));
+		const tagsByContact: Record<string, string[]> = {};
+		contactTags?.forEach((ct) => {
+			if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
+			tagsByContact[ct.contact_id].push(ct.tag_id);
+		});
 
-    setContacts(enriched);
-    setLoading(false);
+		// Agrupar marcas de tiempo de actividad por contacto
+		const activitiesByContact: Record<string, string[]> = {};
+		conversations?.forEach((conv) => {
+			if (!conv.contact_id) return;
+			if (!activitiesByContact[conv.contact_id]) activitiesByContact[conv.contact_id] = [];
+			if (conv.last_message_at) activitiesByContact[conv.contact_id].push(conv.last_message_at);
+			if (conv.updated_at) activitiesByContact[conv.contact_id].push(conv.updated_at);
+		});
+		deals?.forEach((deal) => {
+			if (!deal.contact_id) return;
+			if (!activitiesByContact[deal.contact_id]) activitiesByContact[deal.contact_id] = [];
+			if (deal.updated_at) activitiesByContact[deal.contact_id].push(deal.updated_at);
+		});
+		notes?.forEach((note) => {
+			if (!note.contact_id) return;
+			if (!activitiesByContact[note.contact_id]) activitiesByContact[note.contact_id] = [];
+			if (note.created_at) activitiesByContact[note.contact_id].push(note.created_at);
+		});
+
+		const enriched: ContactWithTags[] = contactRows.map((c) => {
+			// Determinar la última actividad considerando creacion, actualizacion, mensajes, tratos y notas
+			const timestamps = [
+				c.created_at,
+				c.updated_at,
+				...(activitiesByContact[c.id] || []),
+			].filter(Boolean);
+
+			let latest = c.updated_at || c.created_at;
+			let latestTime = new Date(latest).getTime();
+			for (const ts of timestamps) {
+				const time = new Date(ts).getTime();
+				if (!isNaN(time) && time > latestTime) {
+					latestTime = time;
+					latest = ts;
+				}
+			}
+
+			return {
+				...c,
+				tags: (tagsByContact[c.id] ?? [])
+					.map((tid) => tagsMap[tid])
+					.filter(Boolean),
+				last_activity_at: latest,
+			};
+		});
+
+		setContacts(enriched);
+		setLoading(false);
   }, [supabase, page, search, selectedTagIds, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
@@ -530,120 +611,130 @@ export default function ContactsPage() {
       {/* Table */}
       <div className="rounded-lg border border-border overflow-hidden">
         <Table>
-          <TableHeader>
-            <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="w-10">
-                <Checkbox
-                  checked={allOnPageSelected}
-                  indeterminate={!allOnPageSelected && someOnPageSelected}
-                  onCheckedChange={toggleSelectAll}
-                  disabled={contacts.length === 0}
-                  aria-label="Select all contacts on this page"
-                />
-              </TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
-              <TableHead className="text-muted-foreground w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="size-6 animate-spin text-primary" />
-                    <p className="text-sm text-muted-foreground">{t('loading')}</p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : contacts.length === 0 ? (
-              <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
-                  <div className="flex flex-col items-center gap-2">
-                    <Users className="size-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      {hasActiveFilters
-                        ? t('noContactsMatch')
-                        : t('noContactsYet')}
-                    </p>
-                    {!hasActiveFilters && (
-                      <GatedButton
-                        canAct={canEdit}
-                        gateReason="add or import contacts"
-                        variant="outline"
-                        size="sm"
-                        onClick={openAddForm}
-                        className="mt-2 border-border text-muted-foreground hover:bg-muted"
-                      >
-                        <Plus className="size-3.5" />
-                        {t('addFirstContact')}
-                      </GatedButton>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              contacts.map((contact) => (
-                <TableRow
-                  key={contact.id}
-                  className="border-border hover:bg-muted/50 cursor-pointer"
-                  onClick={() => openDetail(contact.id)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(contact.id)}
-                      onCheckedChange={() => toggleSelect(contact.id)}
-                      aria-label={`Select ${contact.name || contact.phone}`}
-                    />
-                  </TableCell>
-                  <TableCell className="text-foreground font-medium">
-                    {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
-                    {contact.phone}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
-                    {contact.email || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
-                    {contact.company || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {tag.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          +{contact.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
-                    {new Date(contact.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </TableCell>
+					<TableHeader>
+						<TableRow className="border-border hover:bg-transparent">
+							<TableHead className="w-10">
+								<Checkbox
+									checked={allOnPageSelected}
+									indeterminate={!allOnPageSelected && someOnPageSelected}
+									onCheckedChange={toggleSelectAll}
+									disabled={contacts.length === 0}
+									aria-label="Select all contacts on this page"
+								/>
+							</TableHead>
+							<TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
+							<TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
+							<TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
+							<TableHead className="text-muted-foreground hidden xl:table-cell">{t('tableColumns.company')}</TableHead>
+							<TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
+							<TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
+							<TableHead className="text-muted-foreground hidden sm:table-cell">{t('tableColumns.lastActivity')}</TableHead>
+							<TableHead className="text-muted-foreground w-12" />
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{loading ? (
+							<TableRow className="border-border">
+								<TableCell colSpan={9} className="text-center py-12">
+									<div className="flex flex-col items-center gap-2">
+										<Loader2 className="size-6 animate-spin text-primary" />
+										<p className="text-sm text-muted-foreground">{t('loading')}</p>
+									</div>
+								</TableCell>
+							</TableRow>
+						) : contacts.length === 0 ? (
+							<TableRow className="border-border">
+								<TableCell colSpan={9} className="text-center py-12">
+									<div className="flex flex-col items-center gap-2">
+										<Users className="size-8 text-muted-foreground" />
+										<p className="text-sm text-muted-foreground">
+											{hasActiveFilters
+												? t('noContactsMatch')
+												: t('noContactsYet')}
+										</p>
+										{!hasActiveFilters && (
+											<GatedButton
+												canAct={canEdit}
+												gateReason="add or import contacts"
+												variant="outline"
+												size="sm"
+												onClick={openAddForm}
+												className="mt-2 border-border text-muted-foreground hover:bg-muted"
+											>
+												<Plus className="size-3.5" />
+												{t('addFirstContact')}
+											</GatedButton>
+										)}
+									</div>
+								</TableCell>
+							</TableRow>
+						) : (
+							contacts.map((contact) => (
+								<TableRow
+									key={contact.id}
+									className="border-border hover:bg-muted/50 cursor-pointer"
+									onClick={() => openDetail(contact.id)}
+								>
+									<TableCell onClick={(e) => e.stopPropagation()}>
+										<Checkbox
+											checked={selected.has(contact.id)}
+											onCheckedChange={() => toggleSelect(contact.id)}
+											aria-label={`Select ${contact.name || contact.phone}`}
+										/>
+									</TableCell>
+									<TableCell className="text-foreground font-medium">
+										{contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+									</TableCell>
+									<TableCell className="text-muted-foreground font-mono text-xs">
+										{contact.phone}
+									</TableCell>
+									<TableCell className="text-muted-foreground hidden md:table-cell text-sm">
+										{contact.email || <span className="text-muted-foreground">-</span>}
+									</TableCell>
+									<TableCell className="text-muted-foreground hidden xl:table-cell text-sm">
+										{contact.company || <span className="text-muted-foreground">-</span>}
+									</TableCell>
+									<TableCell className="hidden md:table-cell">
+										<div className="flex flex-wrap gap-1">
+											{contact.tags && contact.tags.length > 0 ? (
+												contact.tags.slice(0, 3).map((tag) => (
+													<span
+														key={tag.id}
+														className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+														style={{
+															backgroundColor: tag.color + '20',
+															color: tag.color,
+														}}
+													>
+														{tag.name}
+													</span>
+												))
+											) : (
+												<span className="text-muted-foreground text-xs">-</span>
+											)}
+											{contact.tags && contact.tags.length > 3 && (
+												<span className="text-[10px] text-muted-foreground">
+													+{contact.tags.length - 3}
+												</span>
+											)}
+										</div>
+									</TableCell>
+									<TableCell className="text-muted-foreground text-xs hidden lg:table-cell whitespace-nowrap">
+										<div className="flex flex-col">
+											<span className="font-medium text-foreground">{formatDateTime(contact.created_at).date}</span>
+											<span className="text-[11px] text-muted-foreground">{formatDateTime(contact.created_at).time}</span>
+										</div>
+									</TableCell>
+									<TableCell className="text-muted-foreground text-xs hidden sm:table-cell whitespace-nowrap">
+										{contact.last_activity_at ? (
+											<div className="flex flex-col">
+												<span className="font-medium text-foreground">{formatDateTime(contact.last_activity_at).date}</span>
+												<span className="text-[11px] text-muted-foreground">{formatDateTime(contact.last_activity_at).time}</span>
+											</div>
+										) : (
+											<span className="text-muted-foreground text-xs">-</span>
+										)}
+									</TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger

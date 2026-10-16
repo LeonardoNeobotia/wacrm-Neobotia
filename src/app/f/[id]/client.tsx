@@ -73,38 +73,64 @@ function PhoneInput({ name, required }: { name: string; required?: boolean }) {
     const cleaned = raw.replace(/[^\d+\s\-]/g, "")
     setRawInput(cleaned)
 
-    // Auto-deteccion en tiempo real cuando el usuario escribe con + al inicio
-    if (cleaned.startsWith("+")) {
-      const digits = cleaned.replace(/\D/g, "")
-      const match = detectCountry(digits)
-      if (match) setSelectedCode(match)
-    }
-  }
+		// Auto-deteccion en tiempo real cuando el usuario escribe con + al inicio o escribe el codigo
+		const digits = cleaned.replace(/\D/g, "")
+		if (cleaned.startsWith("+")) {
+			const match = detectCountry(digits)
+			if (match) setSelectedCode(match)
+		} else {
+			// Si escribe directamente el codigo sin el + (ej: 569...)
+			const match = detectCountry(digits)
+			if (match && digits.length >= match.dial.replace(/\D/g, "").length + 7) {
+				setSelectedCode(match)
+			}
+		}
+	}
 
-  // Cuando el usuario pega un numero completo
-  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    e.preventDefault()
-    const pasted = e.clipboardData.getData("text").trim()
-    setRawInput(pasted)
+	// Cuando el usuario pega un numero completo
+	function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+		e.preventDefault()
+		const pasted = e.clipboardData.getData("text").trim()
+		setRawInput(pasted)
 
-    if (pasted.startsWith("+") || pasted.startsWith("00")) {
-      const digits = pasted.replace(/\D/g, "")
-      const match = detectCountry(digits)
-      if (match) {
-        setSelectedCode(match)
-        // Dejamos solo la parte local (sin el prefijo)
-        const localPart = digits.slice(match.dial.replace(/\D/g, "").length)
-        setRawInput(localPart)
-      }
-    }
-  }
+		if (pasted.startsWith("+") || pasted.startsWith("00")) {
+			const digits = pasted.replace(/\D/g, "")
+			const match = detectCountry(digits)
+			if (match) {
+				setSelectedCode(match)
+				// Dejamos solo la parte local (sin el prefijo)
+				const localPart = digits.slice(match.dial.replace(/\D/g, "").length)
+				setRawInput(localPart)
+			}
+		}
+	}
 
-  // Valor final: si el usuario escribio con +, usamos su input completo normalizado
-  // Si escribio sin +, anteponemos el codigo del pais seleccionado
-  const localDigits = rawInput.replace(/\D/g, "")
-  const fullValue = rawInput.startsWith("+")
-    ? `+${rawInput.replace(/\D/g, "")}`
-    : `${selectedCode.dial}${localDigits}`
+	// Valor final normalizado sin duplicar codigos de pais
+	const dialDigits = selectedCode.dial.replace(/\D/g, "")
+	const localDigits = rawInput.replace(/\D/g, "")
+
+	let fullDigits = localDigits
+	if (!rawInput.startsWith("+")) {
+		// Si no empieza con +, pero ya incluye el dial code al inicio, no duplicarlo
+		if (localDigits.startsWith(dialDigits)) {
+			fullDigits = localDigits
+		} else if (localDigits) {
+			fullDigits = `${dialDigits}${localDigits}`
+		}
+	}
+
+	// Eliminar duplicacion evidente si ocurrio (ej: 56569...)
+	if (fullDigits.startsWith("5656")) {
+		fullDigits = fullDigits.slice(2)
+	}
+	for (const cc of ["56", "54", "57", "52", "51", "58", "55", "593", "591", "595", "598"]) {
+		if (fullDigits.startsWith(cc + cc) && fullDigits.length >= cc.length * 2 + 7) {
+			fullDigits = fullDigits.slice(cc.length)
+			break
+		}
+	}
+
+	const fullValue = fullDigits ? `+${fullDigits}` : ""
 
   const filteredCountries = COUNTRY_CODES.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||

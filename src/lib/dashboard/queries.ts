@@ -269,7 +269,7 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   // Pull ~10 from each source (plenty of headroom after merge-sort),
   // then interleave by timestamp. The individual per-table limits
   // keep the payload small; the final limit is enforced after sort.
-  const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
+  const [msgs, contacts, deals, broadcasts, autoLogs, formNotes] = await Promise.all([
     db
       .from('messages')
       .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))')
@@ -294,6 +294,12 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     db
       .from('automation_logs')
       .select('id, trigger_event, status, created_at, automation:automations(name), contact:contacts(name, phone)')
+      .order('created_at', { ascending: false })
+      .limit(10),
+    db
+      .from('contact_notes')
+      .select('id, contact_id, note_text, created_at, contact:contacts(name, phone)')
+      .like('note_text', '[Formulario:%')
       .order('created_at', { ascending: false })
       .limit(10),
   ])
@@ -389,6 +395,26 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
       kind: 'automation',
       text: `Automation "${autoName}" ${l.status === 'failed' ? 'failed for' : 'triggered for'} ${who}`,
       at: l.created_at,
+    })
+  }
+
+  for (const fn of (formNotes?.data ?? []) as unknown as Array<{
+    id: string
+    contact_id: string
+    note_text: string
+    created_at: string
+    contact: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null
+  }>) {
+    const contact = Array.isArray(fn.contact) ? fn.contact[0] : fn.contact
+    const who = contact?.name || contact?.phone || 'un lead'
+    const match = fn.note_text?.match(/\[Formulario:\s*([^\]]+)\]/)
+    const formTitle = match ? match[1].trim() : 'Contacto Web'
+    items.push({
+      id: `form-${fn.id}`,
+      kind: 'form',
+      text: `Formulario "${formTitle}" completado por ${who}`,
+      at: fn.created_at,
+      href: `/forms?tab=submissions`,
     })
   }
 
