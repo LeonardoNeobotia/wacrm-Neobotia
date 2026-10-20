@@ -66,9 +66,9 @@ interface SentimentDashboardProps {
 }
 
 const COLORS = {
-  positive: "hsl(var(--chart-2))", // typically teal/green
-  neutral: "hsl(var(--chart-1))", // typically blue/gray
-  negative: "hsl(var(--chart-5))", // typically red/rose
+	positive: "#10b981", // Emerald 500
+	neutral: "#94a3b8", // Slate 400
+	negative: "#f43f5e", // Rose 500
 };
 
 export default function SentimentDashboard({
@@ -151,41 +151,77 @@ export default function SentimentDashboard({
               Proporción global de estados de ánimo.
             </CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px]">
-            {totalMessages > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--popover))",
-                      borderColor: "hsl(var(--border))",
-                      color: "hsl(var(--popover-foreground))",
-                    }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                No hay suficientes datos.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+					<CardContent className="h-[300px]">
+						{totalMessages > 0 ? (
+							<div className="relative h-full w-full">
+								<ResponsiveContainer width="100%" height="100%">
+									<PieChart>
+										<Pie
+											data={pieData}
+											cx="50%"
+											cy="45%"
+											innerRadius={65}
+											outerRadius={95}
+											paddingAngle={3}
+											dataKey="value"
+											stroke="hsl(var(--card))"
+											strokeWidth={2}
+										>
+											{pieData.map((entry, index) => (
+												<Cell key={`cell-${index}`} fill={entry.color} />
+											))}
+										</Pie>
+										<Tooltip
+											content={({ active, payload }) => {
+												if (active && payload && payload.length) {
+													const item = payload[0].payload;
+													const pct = totalMessages > 0 ? ((item.value / totalMessages) * 100).toFixed(1) : "0";
+													return (
+														<div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-md">
+															<div className="flex items-center gap-2 font-medium text-popover-foreground">
+																<span
+																	className="h-2.5 w-2.5 rounded-full shrink-0"
+																	style={{ backgroundColor: item.color }}
+																/>
+																<span>{item.name}</span>
+															</div>
+															<p className="mt-1 text-muted-foreground">
+																<span className="font-semibold text-foreground">{item.value}</span> mensajes ({pct}%)
+															</p>
+														</div>
+													);
+												}
+												return null;
+											}}
+										/>
+										<Legend
+											verticalAlign="bottom"
+											iconType="circle"
+											formatter={(value) => {
+												const item = pieData.find((d) => d.name === value);
+												const pct = item && totalMessages > 0 ? ` (${Math.round((item.value / totalMessages) * 100)}%)` : "";
+												return (
+													<span className="text-xs font-medium text-foreground">
+														{value} <span className="text-muted-foreground font-normal">{item?.value ?? 0}{pct}</span>
+													</span>
+												);
+											}}
+										/>
+									</PieChart>
+								</ResponsiveContainer>
+								{/* Indicador central del total */}
+								<div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center -translate-y-4">
+									<span className="text-2xl font-bold text-foreground">{totalMessages}</span>
+									<span className="text-[10px] uppercase tracking-wider text-muted-foreground">Total</span>
+								</div>
+							</div>
+						) : (
+							<div className="flex h-full items-center justify-center text-muted-foreground">
+								No hay suficientes datos.
+							</div>
+						)}
+					</CardContent>
+				</Card>
 
         <Card className="shadow-sm">
           <CardHeader>

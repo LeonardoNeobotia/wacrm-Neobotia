@@ -8,7 +8,7 @@ import {
   CONVERSATION_SELECT,
   normalizeConversation,
 } from "@/lib/inbox/conversations";
-import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
+import type { Conversation, Message, Contact, ConversationStatus, Tag } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
@@ -545,14 +545,28 @@ function InboxPageInner() {
       );
       if (activeConversation?.id === conversationId) {
         setActiveConversation((prev) =>
-          prev
-            ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
-            : prev
-        );
-      }
-    },
-    [activeConversation]
-  );
+					prev
+						? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
+						: prev
+				);
+			}
+		},
+		[activeConversation]
+	);
+
+	const handleTagsChange = useCallback(
+		(newTags: Tag[]) => {
+			setActiveContact((prev) => (prev ? { ...prev, tags: newTags } : prev));
+			setConversations((prev) =>
+				prev.map((c) =>
+					c.contact && c.contact.id === activeContact?.id
+						? { ...c, contact: { ...c.contact, tags: newTags } }
+						: c
+				)
+			);
+		},
+		[activeContact?.id]
+	);
 
   // On mobile (<lg) we show a SINGLE pane — either the list or the
   // thread — rather than cramming both side-by-side. Selecting a
@@ -630,11 +644,11 @@ function InboxPageInner() {
             agent hasn't collapsed it via the thread-header toggle (#258).
             On mobile it's always hidden (the `lg:block` below), so the
             toggle — which is itself desktop-only — never affects it. */}
-        {contactPanelOpen && (
-          <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
-          </div>
-        )}
+				{contactPanelOpen && (
+					<div className="hidden lg:block">
+						<ContactSidebar contact={activeContact} onTagsChange={handleTagsChange} />
+					</div>
+				)}
       </div>
     </div>
   );
