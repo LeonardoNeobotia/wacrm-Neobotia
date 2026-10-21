@@ -52,6 +52,7 @@
     "title": "CRM para WhatsApp",
     "dashboard": "Dashboard",
     "inbox": "Bandeja de entrada",
+    "internalChat": "Chat Interno",
     "notifications": "Notificaciones",
     "contacts": "Contactos",
     "pipelines": "Embudos",
@@ -79,6 +80,7 @@
   "Header": {
     "dashboard": "Dashboard",
     "inbox": "Bandeja de entrada",
+    "internalChat": "Chat Interno",
     "notifications": "Notificaciones",
     "contacts": "Contactos",
     "pipelines": "Pipelines",

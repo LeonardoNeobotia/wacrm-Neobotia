@@ -52,6 +52,7 @@
     "title": "CRM Template for WhatsApp",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
+    "internalChat": "Internal Chat",
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
@@ -79,6 +80,7 @@
   "Header": {
     "dashboard": "Dashboard",
     "inbox": "Inbox",
+    "internalChat": "Internal Chat",
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",

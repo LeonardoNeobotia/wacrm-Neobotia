@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  MessagesSquare,
   Radio,
   Settings,
   Shield,
@@ -94,6 +95,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
+  { href: "/internal-chat", labelKey: "internalChat", icon: MessagesSquare },
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },

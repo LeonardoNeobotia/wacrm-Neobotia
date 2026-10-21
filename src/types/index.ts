@@ -187,7 +187,7 @@ export interface Conversation {
 // Notifications (migration 027)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'chat_invitation';
 
 export interface Notification {
   id: string;
@@ -197,6 +197,7 @@ export interface Notification {
   type: NotificationType;
   conversation_id?: string;
   contact_id?: string;
+  chat_id?: string;
   /** Who triggered it. Null when an automation/system assigned it. */
   actor_user_id?: string;
   title: string;
@@ -674,4 +675,69 @@ export interface QuickReply {
   interactive_payload?: InteractiveMessagePayload | null;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================================
+// Internal Team Chat (migration 043)
+// ============================================================
+
+export type InternalChatType = 'direct' | 'group';
+export type InternalMemberRole = 'admin' | 'member';
+export type InternalMemberStatus = 'pending' | 'accepted' | 'declined';
+export type InternalMessageType = 'text' | 'image' | 'file' | 'system';
+
+export interface InternalChatMember {
+	id: string;
+	chat_id: string;
+	user_id: string;
+	role: InternalMemberRole;
+	status: InternalMemberStatus;
+	invited_by?: string | null;
+	invited_at: string;
+	joined_at?: string | null;
+	last_read_at: string;
+	created_at: string;
+	profile?: {
+		user_id: string;
+		full_name: string | null;
+		email?: string | null;
+		avatar_url: string | null;
+		account_role?: string;
+	};
+}
+
+export interface InternalMessage {
+	id: string;
+	chat_id: string;
+	sender_id: string | null;
+	text: string;
+	message_type: InternalMessageType;
+	file_url?: string | null;
+	file_name?: string | null;
+	file_size?: number | null;
+	created_at: string;
+	status?: "sending" | "sent" | "error";
+	temp_id?: string;
+	sender_profile?: {
+		user_id: string;
+		full_name: string | null;
+		avatar_url: string | null;
+	};
+}
+
+export interface InternalChat {
+	id: string;
+	account_id: string;
+	type: InternalChatType;
+	name: string | null;
+	description?: string | null;
+	avatar_url?: string | null;
+	color: string;
+	created_by: string;
+	created_at: string;
+	updated_at: string;
+	members?: InternalChatMember[];
+	last_message?: InternalMessage | null;
+	unread_count?: number;
+	my_membership?: InternalChatMember;
 }
