@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { broadcastNewMessage } from "@/lib/internal-chat/server-realtime";
 import type { InternalMessage } from "@/types";
+
+export const dynamic = "force-dynamic";
 
 function getAdminClient() {
 	return createSupabaseClient(
@@ -64,7 +67,15 @@ export async function GET(request: Request, { params }: RouteParams) {
 			sender_profile: m.sender_id ? profileMap.get(m.sender_id) || null : null,
 		}));
 
-		return NextResponse.json({ messages });
+		return NextResponse.json(
+			{ messages },
+			{
+				headers: {
+					"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+					Pragma: "no-cache",
+				},
+			}
+		);
 	} catch (err) {
 		return toErrorResponse(err);
 	}
@@ -144,6 +155,9 @@ export async function POST(request: Request, { params }: RouteParams) {
 			.from("internal_chat_members")
 			.update({ last_read_at: now })
 			.eq("id", member.id);
+
+		// 4. Transmitir en tiempo real mediante Supabase Realtime Broadcast desde el servidor
+		await broadcastNewMessage(chatId, ctx.accountId, messageWithProfile);
 
 		return NextResponse.json({ message: messageWithProfile });
 	} catch (err) {

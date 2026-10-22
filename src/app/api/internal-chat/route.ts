@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { broadcastChatCreated } from "@/lib/internal-chat/server-realtime";
 import type { InternalChat, InternalChatMember, InternalMessage } from "@/types";
+
+export const dynamic = "force-dynamic";
 
 function getAdminClient() {
 	return createSupabaseClient(
@@ -29,7 +32,15 @@ export async function GET() {
 		}
 
 		if (!myMemberships || myMemberships.length === 0) {
-			return NextResponse.json({ chats: [] });
+			return NextResponse.json(
+				{ chats: [] },
+				{
+					headers: {
+						"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+						Pragma: "no-cache",
+					},
+				}
+			);
 		}
 
 		const chatIds = myMemberships.map((m) => m.chat_id);
@@ -140,7 +151,15 @@ export async function GET() {
 			})
 			.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
-		return NextResponse.json({ chats });
+		return NextResponse.json(
+			{ chats },
+			{
+				headers: {
+					"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+					Pragma: "no-cache",
+				},
+			}
+		);
 	} catch (err) {
 		return toErrorResponse(err);
 	}
@@ -284,6 +303,11 @@ export async function POST(request: Request) {
 			text: initialText,
 			message_type: "system",
 		});
+
+		// 6. Notificar creacion del chat en tiempo real a la cuenta
+		if (ctx.accountId) {
+			await broadcastChatCreated(ctx.accountId, chat.id, ctx.userId);
+		}
 
 		return NextResponse.json({ chat_id: chat.id, chat });
 	} catch (err) {

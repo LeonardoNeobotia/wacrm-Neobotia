@@ -36,10 +36,16 @@ function InternalChatPageInner() {
 		activeChatIdRef.current = activeChatId;
 	}, [activeChatId]);
 
-	// Cargar chats sin dependencias ciclicas
+	// Cargar chats sin dependencias ciclicas (con bypass de cache)
 	const fetchChats = useCallback(async () => {
 		try {
-			const res = await fetch("/api/internal-chat");
+			const res = await fetch(`/api/internal-chat?_t=${Date.now()}`, {
+				cache: "no-store",
+				headers: {
+					"Cache-Control": "no-cache, no-store, must-revalidate",
+					Pragma: "no-cache",
+				},
+			});
 			if (res.ok) {
 				const data = await res.json();
 				const fetchedChats: InternalChat[] = data.chats || [];
@@ -87,9 +93,11 @@ function InternalChatPageInner() {
 		if (!accountId || !user?.id) return;
 
 		const supabase = createClient();
+		let channelStatus = "CLOSED";
+
 		const channel = supabase
 			.channel(`internal-chats-account:${accountId}`, {
-				config: { broadcast: { self: false } },
+				config: { broadcast: { ack: false, self: false } },
 			})
 			.on("broadcast", { event: "chat_updated" }, () => {
 				fetchChatsRef.current?.();
@@ -130,27 +138,41 @@ function InternalChatPageInner() {
 				() => {
 					fetchChatsRef.current?.();
 				}
-			)
-			.subscribe();
+			);
 
-		// Actualizar al regresar a la pestaña activa
-		const handleVisibility = () => {
-			if (document.visibilityState === "visible") {
+		channel.subscribe((status) => {
+			channelStatus = status;
+			if (status === "SUBSCRIBED") {
 				fetchChatsRef.current?.();
+			}
+		});
+
+		// Actualizar al regresar a la pestana activa o al enfocar la ventana
+		const handleFocusOrVisibility = () => {
+			fetchChatsRef.current?.();
+			if (channelStatus !== "SUBSCRIBED") {
+				try {
+					channel.subscribe((status) => {
+						channelStatus = status;
+					});
+				} catch (err) {
+					console.warn("Error reanudando canal de cuenta:", err);
+				}
 			}
 		};
-		document.addEventListener("visibilitychange", handleVisibility);
 
-		// Intervalo suave de 5 segundos para actualizar estados y previsualizaciones
+		window.addEventListener("focus", handleFocusOrVisibility);
+		document.addEventListener("visibilitychange", handleFocusOrVisibility);
+
+		// Intervalo continuo de 4 segundos para actualizar estados y previsualizaciones
 		const interval = setInterval(() => {
-			if (document.visibilityState === "visible") {
-				fetchChatsRef.current?.();
-			}
-		}, 5000);
+			fetchChatsRef.current?.();
+		}, 4000);
 
 		return () => {
+			window.removeEventListener("focus", handleFocusOrVisibility);
+			document.removeEventListener("visibilitychange", handleFocusOrVisibility);
 			supabase.removeChannel(channel);
-			document.removeEventListener("visibilitychange", handleVisibility);
 			clearInterval(interval);
 		};
 	}, [accountId, user?.id]);

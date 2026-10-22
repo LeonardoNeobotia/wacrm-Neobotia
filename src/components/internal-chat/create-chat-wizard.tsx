@@ -177,19 +177,6 @@ export function CreateChatWizard({
 				);
 			}
 
-			// Notificar inmediatamente en tiempo real a los demás miembros de la cuenta
-			if (accountId) {
-				const supabase = createClient();
-				const channel = supabase.channel(`internal-chats-account:${accountId}`, {
-					config: { broadcast: { self: false } },
-				});
-				channel.send({
-					type: "broadcast",
-					event: "chat_created",
-					payload: { chat_id: data.chat_id, created_by: user?.id },
-				});
-			}
-
 			handleClose(false);
 			onChatCreated(data.chat_id);
 		} catch (err: any) {

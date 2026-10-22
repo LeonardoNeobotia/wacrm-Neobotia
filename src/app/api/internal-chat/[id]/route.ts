@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { broadcastChatUpdated } from "@/lib/internal-chat/server-realtime";
+
+export const dynamic = "force-dynamic";
 
 function getAdminClient() {
 	return createSupabaseClient(
@@ -42,7 +45,15 @@ export async function GET(request: Request, { params }: RouteParams) {
 			return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
 		}
 
-		return NextResponse.json({ chat });
+		return NextResponse.json(
+			{ chat },
+			{
+				headers: {
+					"Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+					Pragma: "no-cache",
+				},
+			}
+		);
 	} catch (err) {
 		return toErrorResponse(err);
 	}
@@ -125,6 +136,11 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 			});
 		}
 
+		// Notificar actualizacion en tiempo real a la cuenta
+		if (ctx.accountId) {
+			await broadcastChatUpdated(ctx.accountId, chatId);
+		}
+
 		return NextResponse.json({ success: true, chat: updatedChat });
 	} catch (err) {
 		return toErrorResponse(err);
@@ -195,6 +211,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 				message_type: "system",
 			});
 
+			if (ctx.accountId) {
+				await broadcastChatUpdated(ctx.accountId, chatId);
+			}
+
 			return NextResponse.json({ success: true, action: "left" });
 		}
 
@@ -216,6 +236,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 		if (delErr) {
 			console.error("[DELETE /api/internal-chat/[id]] error:", delErr);
 			return NextResponse.json({ error: "Error al eliminar chat" }, { status: 500 });
+		}
+
+		if (ctx.accountId) {
+			await broadcastChatUpdated(ctx.accountId, chatId);
 		}
 
 		return NextResponse.json({ success: true, action: "deleted" });

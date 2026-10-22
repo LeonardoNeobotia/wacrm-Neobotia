@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { broadcastChatUpdated } from "@/lib/internal-chat/server-realtime";
+
+export const dynamic = "force-dynamic";
 
 function getAdminClient() {
 	return createSupabaseClient(
@@ -71,6 +74,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 				text: `${userName} acepto la invitacion y se unio al chat`,
 				message_type: "system",
 			});
+		}
+
+		if (ctx.accountId) {
+			await broadcastChatUpdated(ctx.accountId, chatId);
 		}
 
 		return NextResponse.json({ success: true, status: newStatus });

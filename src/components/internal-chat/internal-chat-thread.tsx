@@ -114,9 +114,8 @@ export function InternalChatThread({
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	// Canales de Realtime para transmision broadcast instantanea
+	// Canal de Realtime para transmision broadcast instantanea
 	const chatChannelRef = useRef<any>(null);
-	const accountChannelRef = useRef<any>(null);
 
 	// Cola de mensajes salientes para envio secuencial y preciso
 	const outboundQueueRef = useRef<OutboundQueueItem[]>([]);
@@ -126,6 +125,63 @@ export function InternalChatThread({
 	const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
 		messagesEndRef.current?.scrollIntoView({ behavior });
 	}, []);
+
+	// Sincronizar mensajes recientes con la base de datos (con bypass de cache garantizado)
+	const syncRecentMessages = useCallback(async () => {
+		if (!chat?.id) return;
+		try {
+			const res = await fetch(`/api/internal-chat/${chat.id}/messages?_t=${Date.now()}`, {
+				cache: "no-store",
+				headers: {
+					"Cache-Control": "no-cache, no-store, must-revalidate",
+					Pragma: "no-cache",
+				},
+			});
+			if (res.ok) {
+				const data = await res.json();
+				const freshMsgs: InternalMessage[] = data.messages || [];
+				setMessages((prev) => {
+					// Identificar mensajes temporales que siguen en proceso de envio
+					const tempMsgs = prev.filter(
+						(m) => m.id.startsWith("temp-") || m.status === "sending"
+					);
+					const prevPersisted = prev.filter(
+						(m) => !m.id.startsWith("temp-") && m.status !== "sending"
+					);
+
+					// Comparacion rapida para evitar re-renders si la lista es identica
+					const isIdentical =
+						prevPersisted.length === freshMsgs.length &&
+						prevPersisted.every((pm, idx) => pm.id === freshMsgs[idx]?.id);
+
+					if (isIdentical && tempMsgs.length === 0) {
+						return prev;
+					}
+
+					// Descartar temporales que ya fueron confirmados en freshMsgs
+					const unconfirmedTemps = tempMsgs.filter(
+						(tm) =>
+							!freshMsgs.some(
+								(fm) => fm.sender_id === tm.sender_id && fm.text === tm.text
+							)
+					);
+
+					if (freshMsgs.length > prevPersisted.length) {
+						setTimeout(() => scrollToBottom("smooth"), 50);
+					}
+
+					return [...freshMsgs, ...unconfirmedTemps];
+				});
+			}
+		} catch {
+			// Silencioso
+		}
+	}, [chat?.id, scrollToBottom]);
+
+	const syncMessagesRef = useRef(syncRecentMessages);
+	useEffect(() => {
+		syncMessagesRef.current = syncRecentMessages;
+	}, [syncRecentMessages]);
 
 	// Cargar mensajes cuando cambia el chat
 	useEffect(() => {
@@ -139,7 +195,13 @@ export function InternalChatThread({
 
 		async function fetchMessages() {
 			try {
-				const res = await fetch(`/api/internal-chat/${chat!.id}/messages`);
+				const res = await fetch(`/api/internal-chat/${chat!.id}/messages?_t=${Date.now()}`, {
+					cache: "no-store",
+					headers: {
+						"Cache-Control": "no-cache, no-store, must-revalidate",
+						Pragma: "no-cache",
+					},
+				});
 				if (res.ok) {
 					const data = await res.json();
 					if (isMounted) {
@@ -171,21 +233,14 @@ export function InternalChatThread({
 		if (!chat?.id) return;
 
 		const supabase = createClient();
+		let channelStatus = "CLOSED";
 
-		// Canal del hilo del chat (para mensajes instantáneos entre participantes)
+		// Canal del hilo del chat (para mensajes instantaneos entre participantes)
 		const threadChannel = supabase.channel(`internal-chat-thread:${chat.id}`, {
-			config: { broadcast: { self: false } },
+			config: { broadcast: { ack: false, self: false } },
 		});
 
-		// Canal de la cuenta (para notificar actualizaciones globales de chat)
-		const accChannel = accountId
-			? supabase.channel(`internal-chats-account:${accountId}`, {
-					config: { broadcast: { self: false } },
-			  })
-			: null;
-
 		chatChannelRef.current = threadChannel;
-		accountChannelRef.current = accChannel;
 
 		// Handler unificado para mensajes nuevos recibidos en tiempo real
 		const handleIncomingMessage = async (newMsg: InternalMessage) => {
@@ -222,7 +277,7 @@ export function InternalChatThread({
 				return [...prev, { ...newMsg, status: "sent" }];
 			});
 
-			// Si el mensaje es de otro usuario y tenemos el chat abierto, marcar como leído
+			// Si el mensaje es de otro usuario y tenemos el chat abierto, marcar como leido
 			if (newMsg.sender_id !== user?.id) {
 				fetch(`/api/internal-chat/${chat.id}/read`, { method: "POST" });
 			}
@@ -230,7 +285,7 @@ export function InternalChatThread({
 			setTimeout(() => scrollToBottom("smooth"), 50);
 		};
 
-		// 1. Escucha por WebSockets Broadcast (ultra rápida y sin depender de réplicas en BD)
+		// 1. Escucha por WebSockets Broadcast (ultra rapida e independiente de replicacion en BD)
 		threadChannel
 			.on("broadcast", { event: "new_message" }, ({ payload }) => {
 				handleIncomingMessage(payload as InternalMessage);
@@ -242,7 +297,7 @@ export function InternalChatThread({
 				}
 			});
 
-		// 2. Escucha por postgres_changes (respaldo nativo por replicación en BD)
+		// 2. Escucha por postgres_changes (respaldo nativo por replicacion en BD)
 		threadChannel
 			.on(
 				"postgres_changes",
@@ -272,66 +327,52 @@ export function InternalChatThread({
 				}
 			);
 
-		threadChannel.subscribe();
-		accChannel?.subscribe();
+		threadChannel.subscribe((status) => {
+			channelStatus = status;
+			if (status === "SUBSCRIBED") {
+				syncMessagesRef.current?.();
+			}
+		});
+
+		// Manejo de foco y cambio de pestana:
+		// En navegadores con muchas pestanas, el browser puede desconectar el WebSocket o suspender timers.
+		// Al regresar o enfocar la pestana, sincronizamos de inmediato y reanudamos la conexion si cayo.
+		const handleFocusOrVisible = () => {
+			syncMessagesRef.current?.();
+			if (channelStatus !== "SUBSCRIBED") {
+				try {
+					threadChannel.subscribe((status) => {
+						channelStatus = status;
+					});
+				} catch (err) {
+					console.warn("Error reanudando canal de chat:", err);
+				}
+			}
+		};
+
+		window.addEventListener("focus", handleFocusOrVisible);
+		document.addEventListener("visibilitychange", handleFocusOrVisible);
 
 		return () => {
+			window.removeEventListener("focus", handleFocusOrVisible);
+			document.removeEventListener("visibilitychange", handleFocusOrVisible);
 			supabase.removeChannel(threadChannel);
-			if (accChannel) supabase.removeChannel(accChannel);
 			chatChannelRef.current = null;
-			accountChannelRef.current = null;
 		};
-	}, [chat?.id, user?.id, accountId, scrollToBottom]);
+	}, [chat?.id, user?.id, scrollToBottom]);
 
-	// Sincronización continua de respaldo (heartbeat cada 4s y en cambio de pestaña)
+	// Sincronizacion periodica de respaldo (cada 3.5s)
 	useEffect(() => {
 		if (!chat?.id) return;
 
-		let cancelled = false;
-
-		const syncRecentMessages = async () => {
-			try {
-				const res = await fetch(`/api/internal-chat/${chat.id}/messages`);
-				if (res.ok && !cancelled) {
-					const data = await res.json();
-					const freshMsgs: InternalMessage[] = data.messages || [];
-					setMessages((prev) => {
-						const hasNew = freshMsgs.some((fm) => !prev.some((pm) => pm.id === fm.id));
-						if (!hasNew) return prev;
-
-						const existingIds = new Set(prev.map((m) => m.id));
-						const toAdd = freshMsgs.filter((m) => !existingIds.has(m.id));
-						if (toAdd.length > 0) {
-							setTimeout(() => scrollToBottom("smooth"), 50);
-							return [...prev, ...toAdd];
-						}
-						return prev;
-					});
-				}
-			} catch {
-				// Silencioso
-			}
-		};
-
-		const handleVisibilityChange = () => {
-			if (document.visibilityState === "visible") {
-				syncRecentMessages();
-			}
-		};
-		document.addEventListener("visibilitychange", handleVisibilityChange);
-
 		const interval = setInterval(() => {
-			if (document.visibilityState === "visible") {
-				syncRecentMessages();
-			}
-		}, 4000);
+			syncMessagesRef.current?.();
+		}, 3500);
 
 		return () => {
-			cancelled = true;
-			document.removeEventListener("visibilitychange", handleVisibilityChange);
 			clearInterval(interval);
 		};
-	}, [chat?.id, scrollToBottom]);
+	}, [chat?.id]);
 
 	// Procesar cola secuencial de envio de mensajes
 	const processOutboundQueue = useCallback(async () => {
@@ -368,23 +409,19 @@ export function InternalChatThread({
 						)
 					);
 
-					// Transmitir inmediatamente vía WebSockets a los participantes del chat
-					chatChannelRef.current?.send({
-						type: "broadcast",
-						event: "new_message",
-						payload: data.message,
-					});
+					// Transmitir inmediatamente via WebSockets a los participantes del chat
+					try {
+						chatChannelRef.current?.send({
+							type: "broadcast",
+							event: "new_message",
+							payload: data.message,
+						});
+					} catch (e) {
+						console.warn("Client broadcast fallback:", e);
+					}
 
-					// Notificar a la cuenta para que la lista de chats actualice la vista previa y hora
-					accountChannelRef.current?.send({
-						type: "broadcast",
-						event: "chat_updated",
-						payload: {
-							chat_id: chat.id,
-							last_message: data.message,
-							sender_id: user?.id,
-						},
-					});
+					// Notificar localmente para actualizar vista previa
+					onChatUpdated?.();
 				}
 				outboundQueueRef.current.shift();
 			} catch (err: any) {
@@ -518,16 +555,13 @@ export function InternalChatThread({
 			}
 
 			toast.success("Mensaje eliminado");
-			chatChannelRef.current?.send({
-				type: "broadcast",
-				event: "delete_message",
-				payload: { messageId },
-			});
-			accountChannelRef.current?.send({
-				type: "broadcast",
-				event: "chat_updated",
-				payload: { chat_id: chat.id },
-			});
+			try {
+				chatChannelRef.current?.send({
+					type: "broadcast",
+					event: "delete_message",
+					payload: { messageId },
+				});
+			} catch {}
 			onChatUpdated?.();
 		} catch (err: any) {
 			console.error("Error al eliminar mensaje:", err);
@@ -556,11 +590,6 @@ export function InternalChatThread({
 					? "Invitación aceptada. ¡Ya puedes chatear!"
 					: "Has rechazado la invitación"
 			);
-			accountChannelRef.current?.send({
-				type: "broadcast",
-				event: "chat_updated",
-				payload: { chat_id: chat.id },
-			});
 			onChatUpdated?.();
 		} catch (err: any) {
 			console.error("Error al responder invitacion:", err);
@@ -996,19 +1025,9 @@ export function InternalChatThread({
 				open={infoOpen}
 				onOpenChange={setInfoOpen}
 				onMembersUpdated={() => {
-					accountChannelRef.current?.send({
-						type: "broadcast",
-						event: "chat_updated",
-						payload: { chat_id: chat.id },
-					});
 					onChatUpdated?.();
 				}}
 				onChatDeleted={() => {
-					accountChannelRef.current?.send({
-						type: "broadcast",
-						event: "chat_updated",
-						payload: { chat_id: chat.id },
-					});
 					onChatUpdated?.();
 					onBack?.();
 				}}

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { broadcastDeleteMessage } from "@/lib/internal-chat/server-realtime";
+
+export const dynamic = "force-dynamic";
 
 function getAdminClient() {
 	return createSupabaseClient(
@@ -64,6 +67,9 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 			console.error("[DELETE message] error:", delErr);
 			return NextResponse.json({ error: "Error al eliminar mensaje" }, { status: 500 });
 		}
+
+		// Notificar eliminacion en tiempo real por WebSockets
+		await broadcastDeleteMessage(chatId, ctx.accountId, messageId);
 
 		return NextResponse.json({ success: true, message_id: messageId });
 	} catch (err) {

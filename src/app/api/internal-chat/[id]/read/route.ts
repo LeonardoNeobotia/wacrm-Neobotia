@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
 
+export const dynamic = "force-dynamic";
+
 function getAdminClient() {
 	return createSupabaseClient(
 		process.env.NEXT_PUBLIC_SUPABASE_URL!,
