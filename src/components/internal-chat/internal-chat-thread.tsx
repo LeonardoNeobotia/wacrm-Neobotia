@@ -103,7 +103,7 @@ export function InternalChatThread({
 	onBack,
 	onChatUpdated,
 }: InternalChatThreadProps) {
-	const { user, profile } = useAuth();
+	const { user, profile, accountId } = useAuth();
 	const [messages, setMessages] = useState<InternalMessage[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [inputText, setInputText] = useState("");
@@ -113,6 +113,10 @@ export function InternalChatThread({
 
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	// Canales de Realtime para transmision broadcast instantanea
+	const chatChannelRef = useRef<any>(null);
+	const accountChannelRef = useRef<any>(null);
 
 	// Cola de mensajes salientes para envio secuencial y preciso
 	const outboundQueueRef = useRef<OutboundQueueItem[]>([]);
@@ -162,13 +166,84 @@ export function InternalChatThread({
 		};
 	}, [chat?.id, scrollToBottom]);
 
-	// Suscribirse a mensajes en tiempo real via Supabase Realtime (INSERT y DELETE)
+	// Suscribirse a mensajes en tiempo real via Supabase Realtime (Broadcast + postgres_changes)
 	useEffect(() => {
 		if (!chat?.id) return;
 
 		const supabase = createClient();
-		const channel = supabase
-			.channel(`internal-chat-thread:${chat.id}`)
+
+		// Canal del hilo del chat (para mensajes instantáneos entre participantes)
+		const threadChannel = supabase.channel(`internal-chat-thread:${chat.id}`, {
+			config: { broadcast: { self: false } },
+		});
+
+		// Canal de la cuenta (para notificar actualizaciones globales de chat)
+		const accChannel = accountId
+			? supabase.channel(`internal-chats-account:${accountId}`, {
+					config: { broadcast: { self: false } },
+			  })
+			: null;
+
+		chatChannelRef.current = threadChannel;
+		accountChannelRef.current = accChannel;
+
+		// Handler unificado para mensajes nuevos recibidos en tiempo real
+		const handleIncomingMessage = async (newMsg: InternalMessage) => {
+			if (!newMsg || !newMsg.id) return;
+
+			// Resolver perfil del remitente si viene sin el
+			if (newMsg.sender_id && !newMsg.sender_profile) {
+				const { data: p } = await supabase
+					.from("profiles")
+					.select("user_id, full_name, avatar_url")
+					.eq("user_id", newMsg.sender_id)
+					.maybeSingle();
+				if (p) newMsg.sender_profile = p;
+			}
+
+			setMessages((prev) => {
+				// Si ya existe por id, ignorar
+				if (prev.some((m) => m.id === newMsg.id)) return prev;
+
+				// Si coincide con un mensaje temporal que este enviando el usuario actual
+				const tempMatchIndex = prev.findIndex(
+					(m) =>
+						m.sender_id === newMsg.sender_id &&
+						m.text === newMsg.text &&
+						(m.id.startsWith("temp-") || m.status === "sending")
+				);
+
+				if (tempMatchIndex !== -1) {
+					const copy = [...prev];
+					copy[tempMatchIndex] = { ...newMsg, status: "sent" };
+					return copy;
+				}
+
+				return [...prev, { ...newMsg, status: "sent" }];
+			});
+
+			// Si el mensaje es de otro usuario y tenemos el chat abierto, marcar como leído
+			if (newMsg.sender_id !== user?.id) {
+				fetch(`/api/internal-chat/${chat.id}/read`, { method: "POST" });
+			}
+
+			setTimeout(() => scrollToBottom("smooth"), 50);
+		};
+
+		// 1. Escucha por WebSockets Broadcast (ultra rápida y sin depender de réplicas en BD)
+		threadChannel
+			.on("broadcast", { event: "new_message" }, ({ payload }) => {
+				handleIncomingMessage(payload as InternalMessage);
+			})
+			.on("broadcast", { event: "delete_message" }, ({ payload }) => {
+				const deletedId = (payload as { messageId?: string })?.messageId;
+				if (deletedId) {
+					setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+				}
+			});
+
+		// 2. Escucha por postgres_changes (respaldo nativo por replicación en BD)
+		threadChannel
 			.on(
 				"postgres_changes",
 				{
@@ -177,46 +252,8 @@ export function InternalChatThread({
 					table: "internal_messages",
 					filter: `chat_id=eq.${chat.id}`,
 				},
-				async (payload) => {
-					const newMsg = payload.new as InternalMessage;
-
-					// Si no tenemos el sender_profile, resolverlo
-					if (newMsg.sender_id && !newMsg.sender_profile) {
-						const { data: p } = await supabase
-							.from("profiles")
-							.select("user_id, full_name, avatar_url")
-							.eq("user_id", newMsg.sender_id)
-							.maybeSingle();
-						if (p) newMsg.sender_profile = p;
-					}
-
-					setMessages((prev) => {
-						// Si ya existe por id, ignorar
-						if (prev.some((m) => m.id === newMsg.id)) return prev;
-
-						// Si es un mensaje del usuario actual que coincide con uno en envio optimista
-						const tempMatchIndex = prev.findIndex(
-							(m) =>
-								m.sender_id === newMsg.sender_id &&
-								m.text === newMsg.text &&
-								(m.id.startsWith("temp-") || m.status === "sending")
-						);
-
-						if (tempMatchIndex !== -1) {
-							const copy = [...prev];
-							copy[tempMatchIndex] = { ...newMsg, status: "sent" };
-							return copy;
-						}
-
-						return [...prev, { ...newMsg, status: "sent" }];
-					});
-
-					// Si el chat esta abierto y el mensaje es de otro usuario, marcar leido
-					if (newMsg.sender_id !== user?.id) {
-						fetch(`/api/internal-chat/${chat.id}/read`, { method: "POST" });
-					}
-
-					setTimeout(() => scrollToBottom("smooth"), 50);
+				(payload) => {
+					handleIncomingMessage(payload.new as InternalMessage);
 				}
 			)
 			.on(
@@ -233,13 +270,68 @@ export function InternalChatThread({
 						setMessages((prev) => prev.filter((m) => m.id !== deletedId));
 					}
 				}
-			)
-			.subscribe();
+			);
+
+		threadChannel.subscribe();
+		accChannel?.subscribe();
 
 		return () => {
-			supabase.removeChannel(channel);
+			supabase.removeChannel(threadChannel);
+			if (accChannel) supabase.removeChannel(accChannel);
+			chatChannelRef.current = null;
+			accountChannelRef.current = null;
 		};
-	}, [chat?.id, user?.id, scrollToBottom]);
+	}, [chat?.id, user?.id, accountId, scrollToBottom]);
+
+	// Sincronización continua de respaldo (heartbeat cada 4s y en cambio de pestaña)
+	useEffect(() => {
+		if (!chat?.id) return;
+
+		let cancelled = false;
+
+		const syncRecentMessages = async () => {
+			try {
+				const res = await fetch(`/api/internal-chat/${chat.id}/messages`);
+				if (res.ok && !cancelled) {
+					const data = await res.json();
+					const freshMsgs: InternalMessage[] = data.messages || [];
+					setMessages((prev) => {
+						const hasNew = freshMsgs.some((fm) => !prev.some((pm) => pm.id === fm.id));
+						if (!hasNew) return prev;
+
+						const existingIds = new Set(prev.map((m) => m.id));
+						const toAdd = freshMsgs.filter((m) => !existingIds.has(m.id));
+						if (toAdd.length > 0) {
+							setTimeout(() => scrollToBottom("smooth"), 50);
+							return [...prev, ...toAdd];
+						}
+						return prev;
+					});
+				}
+			} catch {
+				// Silencioso
+			}
+		};
+
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") {
+				syncRecentMessages();
+			}
+		};
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+
+		const interval = setInterval(() => {
+			if (document.visibilityState === "visible") {
+				syncRecentMessages();
+			}
+		}, 4000);
+
+		return () => {
+			cancelled = true;
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+			clearInterval(interval);
+		};
+	}, [chat?.id, scrollToBottom]);
 
 	// Procesar cola secuencial de envio de mensajes
 	const processOutboundQueue = useCallback(async () => {
@@ -275,6 +367,24 @@ export function InternalChatThread({
 								: m
 						)
 					);
+
+					// Transmitir inmediatamente vía WebSockets a los participantes del chat
+					chatChannelRef.current?.send({
+						type: "broadcast",
+						event: "new_message",
+						payload: data.message,
+					});
+
+					// Notificar a la cuenta para que la lista de chats actualice la vista previa y hora
+					accountChannelRef.current?.send({
+						type: "broadcast",
+						event: "chat_updated",
+						payload: {
+							chat_id: chat.id,
+							last_message: data.message,
+							sender_id: user?.id,
+						},
+					});
 				}
 				outboundQueueRef.current.shift();
 			} catch (err: any) {
@@ -408,6 +518,16 @@ export function InternalChatThread({
 			}
 
 			toast.success("Mensaje eliminado");
+			chatChannelRef.current?.send({
+				type: "broadcast",
+				event: "delete_message",
+				payload: { messageId },
+			});
+			accountChannelRef.current?.send({
+				type: "broadcast",
+				event: "chat_updated",
+				payload: { chat_id: chat.id },
+			});
 			onChatUpdated?.();
 		} catch (err: any) {
 			console.error("Error al eliminar mensaje:", err);
@@ -436,6 +556,11 @@ export function InternalChatThread({
 					? "Invitación aceptada. ¡Ya puedes chatear!"
 					: "Has rechazado la invitación"
 			);
+			accountChannelRef.current?.send({
+				type: "broadcast",
+				event: "chat_updated",
+				payload: { chat_id: chat.id },
+			});
 			onChatUpdated?.();
 		} catch (err: any) {
 			console.error("Error al responder invitacion:", err);
@@ -870,8 +995,20 @@ export function InternalChatThread({
 				chat={chat}
 				open={infoOpen}
 				onOpenChange={setInfoOpen}
-				onMembersUpdated={onChatUpdated}
+				onMembersUpdated={() => {
+					accountChannelRef.current?.send({
+						type: "broadcast",
+						event: "chat_updated",
+						payload: { chat_id: chat.id },
+					});
+					onChatUpdated?.();
+				}}
 				onChatDeleted={() => {
+					accountChannelRef.current?.send({
+						type: "broadcast",
+						event: "chat_updated",
+						payload: { chat_id: chat.id },
+					});
 					onChatUpdated?.();
 					onBack?.();
 				}}

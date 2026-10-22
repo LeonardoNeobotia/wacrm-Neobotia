@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import {
 	User,
@@ -51,7 +52,7 @@ export function CreateChatWizard({
 	onOpenChange,
 	onChatCreated,
 }: CreateChatWizardProps) {
-	const { user, profile } = useAuth();
+	const { user, profile, accountId } = useAuth();
 	const [step, setStep] = useState<WizardStep>(1);
 	const [chatType, setChatType] = useState<"direct" | "group">("direct");
 	const [groupName, setGroupName] = useState("");
@@ -174,6 +175,19 @@ export function CreateChatWizard({
 						? "Grupo creado e invitaciones enviadas"
 						: "Invitación de chat enviada"
 				);
+			}
+
+			// Notificar inmediatamente en tiempo real a los demás miembros de la cuenta
+			if (accountId) {
+				const supabase = createClient();
+				const channel = supabase.channel(`internal-chats-account:${accountId}`, {
+					config: { broadcast: { self: false } },
+				});
+				channel.send({
+					type: "broadcast",
+					event: "chat_created",
+					payload: { chat_id: data.chat_id, created_by: user?.id },
+				});
 			}
 
 			handleClose(false);

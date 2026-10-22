@@ -31,6 +31,8 @@ import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { CreateDealDialog } from "@/components/inbox/create-deal-dialog";
+import { formatCurrency } from "@/lib/currency";
 
 const PRESET_COLORS = [
 	"#3b82f6",
@@ -45,10 +47,15 @@ const PRESET_COLORS = [
 
 interface ContactSidebarProps {
 	contact: Contact | null;
+	conversationId?: string;
 	onTagsChange?: (tags: Tag[]) => void;
 }
 
-export function ContactSidebar({ contact, onTagsChange }: ContactSidebarProps) {
+export function ContactSidebar({
+	contact,
+	conversationId,
+	onTagsChange,
+}: ContactSidebarProps) {
 	const tSidebar = useTranslations("Inbox.sidebar");
 	const tThread = useTranslations("Inbox.messageThread");
 
@@ -56,6 +63,7 @@ export function ContactSidebar({ contact, onTagsChange }: ContactSidebarProps) {
 	const contactId = contact?.id;
 	const [copied, setCopied] = useState(false);
 	const [deals, setDeals] = useState<Deal[]>([]);
+	const [createDealOpen, setCreateDealOpen] = useState(false);
 	const [notes, setNotes] = useState<ContactNote[]>([]);
 	const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
 	const tagsRef = useRef(tags);
@@ -460,46 +468,67 @@ export function ContactSidebar({ contact, onTagsChange }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Active Deals */}
-          <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              {tSidebar("deals")}
-            </div>
-            <div className="mt-2 space-y-2">
-              {deals.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
-              ) : (
-                deals.map((deal) => (
-                  <div
-                    key={deal.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
-                    <p className="text-sm font-medium text-foreground">
-                      {deal.title}
-                    </p>
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {deal.currency ?? "$"}
-                        {deal.value.toLocaleString()}
-                      </span>
-                      {deal.stage && (
-                        <span
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{
-                            backgroundColor: `${deal.stage.color}20`,
-                            color: deal.stage.color,
-                          }}
-                        >
-                          {deal.stage.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+					{/* Active Deals */}
+					<div>
+						<div className="flex items-center justify-between px-1">
+							<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+								<DollarSign className="h-3 w-3" />
+								{tSidebar("deals")}
+							</div>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted"
+								onClick={() => setCreateDealOpen(true)}
+								title="Crear negocio"
+							>
+								<Plus className="h-3.5 w-3.5" />
+							</Button>
+						</div>
+						<div className="mt-2 space-y-2">
+							{deals.length === 0 ? (
+								<div className="rounded-lg border border-dashed border-border p-3 text-center">
+									<p className="text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
+									<Button
+										variant="outline"
+										size="sm"
+										className="mt-2 h-7 text-xs border-border bg-muted/50 hover:bg-muted"
+										onClick={() => setCreateDealOpen(true)}
+									>
+										<Plus className="mr-1.5 h-3 w-3" />
+										Crear negocio
+									</Button>
+								</div>
+							) : (
+								deals.map((deal) => (
+									<div
+										key={deal.id}
+										className="rounded-lg bg-muted px-3 py-2"
+									>
+										<p className="text-sm font-medium text-foreground">
+											{deal.title}
+										</p>
+										<div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+											<span>
+												{formatCurrency(deal.value, deal.currency)}
+											</span>
+											{deal.stage && (
+												<span
+													className="rounded-full px-1.5 py-0.5 text-[10px]"
+													style={{
+														backgroundColor: `${deal.stage.color}20`,
+														color: deal.stage.color,
+													}}
+												>
+													{deal.stage.name}
+												</span>
+											)}
+										</div>
+									</div>
+								))
+							)}
+						</div>
+					</div>
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />
@@ -546,8 +575,18 @@ export function ContactSidebar({ contact, onTagsChange }: ContactSidebarProps) {
               </div>
             </div>
           </div>
-        </div>
-      </ScrollArea>
-    </div>
-  );
+				</div>
+			</ScrollArea>
+
+			{contact && (
+				<CreateDealDialog
+					open={createDealOpen}
+					onOpenChange={setCreateDealOpen}
+					contact={contact}
+					conversationId={conversationId}
+					onDealCreated={fetchContactData}
+				/>
+			)}
+		</div>
+	);
 }

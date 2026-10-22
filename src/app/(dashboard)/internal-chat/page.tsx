@@ -88,7 +88,15 @@ function InternalChatPageInner() {
 
 		const supabase = createClient();
 		const channel = supabase
-			.channel("internal-chats-channel")
+			.channel(`internal-chats-account:${accountId}`, {
+				config: { broadcast: { self: false } },
+			})
+			.on("broadcast", { event: "chat_updated" }, () => {
+				fetchChatsRef.current?.();
+			})
+			.on("broadcast", { event: "chat_created" }, () => {
+				fetchChatsRef.current?.();
+			})
 			.on(
 				"postgres_changes",
 				{
@@ -125,8 +133,25 @@ function InternalChatPageInner() {
 			)
 			.subscribe();
 
+		// Actualizar al regresar a la pestaña activa
+		const handleVisibility = () => {
+			if (document.visibilityState === "visible") {
+				fetchChatsRef.current?.();
+			}
+		};
+		document.addEventListener("visibilitychange", handleVisibility);
+
+		// Intervalo suave de 5 segundos para actualizar estados y previsualizaciones
+		const interval = setInterval(() => {
+			if (document.visibilityState === "visible") {
+				fetchChatsRef.current?.();
+			}
+		}, 5000);
+
 		return () => {
 			supabase.removeChannel(channel);
+			document.removeEventListener("visibilitychange", handleVisibility);
+			clearInterval(interval);
 		};
 	}, [accountId, user?.id]);
 
