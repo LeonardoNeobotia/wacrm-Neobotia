@@ -651,12 +651,21 @@ export async function deleteMessageTemplate(
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  // Treat a 404 as a no-op — the template is already gone on Meta's
-  // side, and we still want the local row removed.
-  if (response.status === 404) return
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
+	// Treat a 404 or "template does not exist" as a no-op — the template is already gone on Meta's
+	// side, and we still want the local row removed.
+	if (response.status === 404) return;
+	if (!response.ok) {
+		try {
+			const body = await response.clone().json();
+			const msg = (body?.error?.message || '').toLowerCase();
+			if (msg.includes('not exist') || body?.error?.code === 100) {
+				return;
+			}
+		} catch {
+			// ignore JSON error
+		}
+		await throwMetaError(response, `Meta API error: ${response.status}`);
+	}
 }
 
 // ============================================================

@@ -64,6 +64,23 @@ describe('renderTemplateBody', () => {
       'twice and twice'
     );
   });
+
+  it('substitutes named placeholders in order of appearance', () => {
+    expect(
+      renderTemplateBody('Hola {{nombre_cliente}}, tu cita es {{fecha}}.', [
+        'Leonardo',
+        'mañana',
+      ])
+    ).toBe('Hola Leonardo, tu cita es mañana.');
+  });
+
+  it('leaves a named placeholder visible when the param is missing', () => {
+    expect(
+      renderTemplateBody('Hola {{nombre_cliente}}, tu cita es {{fecha}}.', [
+        'Leonardo',
+      ])
+    ).toBe('Hola Leonardo, tu cita es {{fecha}}.');
+  });
 });
 
 describe('templateBodyParams', () => {

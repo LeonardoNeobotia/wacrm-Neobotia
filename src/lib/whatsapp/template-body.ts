@@ -17,19 +17,36 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { extractTemplateVariables } from '@/lib/whatsapp/template-validators';
 import type { MessageTemplate } from '@/types';
 
 /**
- * Substitute positional `{{1}}`, `{{2}}`… placeholders in a template
- * body. A placeholder with no corresponding param is left as-is rather
+ * Substitute placeholders in a template body, supporting both positional
+ * `{{1}}`, `{{2}}`... and named `{{nombre_cliente}}` placeholders.
+ * A placeholder with no corresponding param is left as-is rather
  * than blanked, so a caller that under-supplies params gets a visible
- * `{{2}}` instead of a silently truncated sentence.
+ * placeholder instead of a silently truncated sentence.
  */
 export function renderTemplateBody(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    return params[idx] ?? `{{${raw}}}`;
-  });
+	const varInfo = extractTemplateVariables(body);
+	if (!varInfo.isNamed) {
+		return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+			const idx = Number(raw) - 1;
+			return params[idx] ?? `{{${raw}}}`;
+		});
+	}
+
+	const valMap = new Map<string, string>();
+	varInfo.variables.forEach((name, i) => {
+		if (params[i] !== undefined && params[i] !== null) {
+			valMap.set(name, params[i]);
+		}
+	});
+
+	return body.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, raw) => {
+		const val = valMap.get(raw.trim());
+		return val !== undefined ? val : match;
+	});
 }
 
 /**

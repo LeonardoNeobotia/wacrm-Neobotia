@@ -76,13 +76,12 @@ export function usePresence(enabled = true): UsePresenceResult {
       });
     };
 
-    // Subscribe FIRST, then snapshot. The snapshot MERGES into whatever
-    // Realtime has already delivered (keeping the newer last_seen_at)
-    // rather than replacing the map — so an event that lands while the
-    // fetch is in flight isn't clobbered by a staler snapshot row.
-    const channel: RealtimeChannel = supabase
-      .channel(`presence:${accountId}`)
-      .on(
+		// Suscribirse con un identificador unico por instancia del hook para evitar
+		// colisiones cuando multiples componentes en la misma pantalla consumen presencia.
+		const channelId = `presence:${accountId}:${Math.random().toString(36).slice(2, 9)}`;
+		const channel: RealtimeChannel = supabase
+			.channel(channelId)
+			.on(
         "postgres_changes",
         {
           event: "*",

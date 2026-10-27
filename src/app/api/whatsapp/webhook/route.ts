@@ -365,6 +365,12 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
@@ -408,6 +414,15 @@ async function handleStatusUpdate(status: {
     if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
     if (status.status === 'delivered') update.delivered_at = tsIso
     if (status.status === 'read') update.read_at = tsIso
+    if (status.status === 'failed') {
+      const err = status.errors?.[0]
+      if (err) {
+        const details = err.error_data?.details ? `: ${err.error_data.details}` : ''
+        update.error_message = `(#${err.code}) ${err.title || err.message || 'Error de entrega'}${details}`
+      } else {
+        update.error_message = 'Fallo en la entrega de Meta'
+      }
+    }
 
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')

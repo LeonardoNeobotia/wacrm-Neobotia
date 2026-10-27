@@ -54,6 +54,22 @@ describe('buildSendComponents — body', () => {
       { type: 'body', parameters: [{ type: 'text', text: 'John' }] },
     ]);
   });
+
+  it('emits a body component with parameter_name when the template has named variables', () => {
+    const components = buildSendComponents(
+      row({ body_text: 'Hola {{nombre_cliente}}, tu cita es {{fecha}}.' }),
+      { body: ['Leonardo', 'mañana'] },
+    );
+    expect(components).toEqual([
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', parameter_name: 'nombre_cliente', text: 'Leonardo' },
+          { type: 'text', parameter_name: 'fecha', text: 'mañana' },
+        ],
+      },
+    ]);
+  });
 });
 
 describe('buildSendComponents — header', () => {
@@ -72,6 +88,19 @@ describe('buildSendComponents — header', () => {
     );
     expect(components).toEqual([
       { type: 'header', parameters: [{ type: 'text', text: 'Sara' }] },
+    ]);
+  });
+
+  it('emits a TEXT header component with parameter_name when a named variable is present', () => {
+    const components = buildSendComponents(
+      row({ header_type: 'text', header_content: 'Hello {{customer_name}}' }),
+      { headerText: 'Sara' },
+    );
+    expect(components).toEqual([
+      {
+        type: 'header',
+        parameters: [{ type: 'text', parameter_name: 'customer_name', text: 'Sara' }],
+      },
     ]);
   });
 

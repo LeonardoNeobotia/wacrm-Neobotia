@@ -53,6 +53,12 @@ export async function POST(
 		const id = p.id
 		const body = await req.json()
 
+		// 0. Verificacion Honeypot anti-spam: Si un bot lleno este campo oculto, respondemos exito falso silencioso
+		if (body.website_url_hp || body._hp_website_confirm) {
+			console.warn("[forms/submit] Spam bot bloqueado exitosamente via honeypot")
+			return NextResponse.json({ success: true }, { headers: corsHeaders })
+		}
+
 		// Service role para escribir sin autenticacion del visitante
 		const supabase = createClient(
 			process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,10 +84,25 @@ export async function POST(
 		const { account_id, pipeline_id, stage_id } = form
 
 		// Mapeo flexible de datos principales para soportar espanol, ingles o formularios externos
-		const name = (body.name || body.nombre || body.full_name || body.fullName || "").trim()
-		const email = (body.email || body.correo || body.mail || "").trim()
-		const rawPhone = (body.phone || body.telefono || body.phone_number || body.celular || body.tel || "").trim()
-		const company = (body.company || body.empresa || body.organization || "").trim()
+		// Limpieza de caracteres nulos y limites de longitud razonables
+		const cleanStr = (val: any, maxLen: number) =>
+			String(val || "")
+				.replace(/\0/g, "")
+				.trim()
+				.slice(0, maxLen)
+
+		const name = cleanStr(body.name || body.nombre || body.full_name || body.fullName, 100)
+		const email = cleanStr(body.email || body.correo || body.mail, 150).toLowerCase()
+		const rawPhone = cleanStr(body.phone || body.telefono || body.phone_number || body.celular || body.tel, 40)
+		const company = cleanStr(body.company || body.empresa || body.organization, 120)
+
+		// Validacion de formato de email si fue ingresado
+		if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+			return NextResponse.json(
+				{ error: "El formato de correo electrónico es inválido." },
+				{ status: 400, headers: corsHeaders }
+			)
+		}
 
 		// Normalizacion del telefono evitando prefijos duplicados (+56569... -> +569...)
 		const normalizedPhone = sanitizeAndNormalizePhone(rawPhone)

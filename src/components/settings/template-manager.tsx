@@ -192,23 +192,24 @@ export function TemplateManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id]);
 
-  async function fetchTemplates(userId: string) {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('message_templates')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setTemplates(data || []);
-    } catch (err) {
-      console.error('Failed to fetch templates:', err);
-      toast.error(t('toastLoadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }
+	async function fetchTemplates(_userId?: string) {
+		try {
+			setLoading(true);
+			// Scope by RLS (is_account_member), no por user_id, para que todo el equipo
+			// pueda ver y gestionar las plantillas compartidas de la cuenta.
+			const { data, error } = await supabase
+				.from('message_templates')
+				.select('*')
+				.order('created_at', { ascending: false });
+			if (error) throw error;
+			setTemplates(data || []);
+		} catch (err) {
+			console.error('Failed to fetch templates:', err);
+			toast.error(t('toastLoadFailed'));
+		} finally {
+			setLoading(false);
+		}
+	}
 
   function buildSubmitPayload() {
     const sample_values: TemplateSampleValues = {};

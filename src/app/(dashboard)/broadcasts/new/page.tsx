@@ -207,6 +207,7 @@ export default function NewBroadcastPage() {
           {currentStep === 2 && template && (
             <Step3Personalize
               template={template}
+              audience={audience}
               variables={variables}
               onUpdate={setVariables}
               headerMediaUrl={headerMediaUrl}

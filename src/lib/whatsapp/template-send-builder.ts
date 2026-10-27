@@ -31,7 +31,11 @@
  */
 
 import type { MessageTemplate, TemplateButton } from '@/types';
-import { extractVariableIndices } from './template-validators';
+import {
+	extractTemplateVariables,
+	extractVariableIndices,
+} from './template-validators';
+
 
 export interface SendTimeParams {
   /** Values for body {{1}}, {{2}}, … indexed by variable position. */
@@ -62,86 +66,101 @@ export type MetaSendComponent =
     };
 
 type MetaSendParameter =
-  | { type: 'text'; text: string }
-  | { type: 'image'; image: { link?: string; id?: string } }
-  | { type: 'video'; video: { link?: string; id?: string } }
-  | { type: 'document'; document: { link?: string; id?: string } }
-  | { type: 'coupon_code'; coupon_code: string }
-  | { type: 'payload'; payload: string };
+	| { type: 'text'; text: string; parameter_name?: string }
+	| { type: 'image'; image: { link?: string; id?: string } }
+	| { type: 'video'; video: { link?: string; id?: string } }
+	| { type: 'document'; document: { link?: string; id?: string } }
+	| { type: 'coupon_code'; coupon_code: string }
+	| { type: 'payload'; payload: string };
 
 function buildHeaderComponent(
-  template: MessageTemplate,
-  params: SendTimeParams,
+	template: MessageTemplate,
+	params: SendTimeParams,
 ): MetaSendComponent | null {
-  const headerType = template.header_type;
-  if (!headerType) return null;
+	const headerType = template.header_type;
+	if (!headerType) return null;
 
-  if (headerType === 'text') {
-    // TEXT header with {{1}} → need a value. Static text headers
-    // (no variables) just ride along inside the template itself; no
-    // header component required on send.
-    const varCount = extractVariableIndices(template.header_content ?? '').length;
-    if (varCount === 0) return null;
-    const value = params.headerText;
-    if (!value || !value.trim()) {
-      throw new Error(
-        'Header text variable {{1}} requires a value — pass headerText.',
-      );
-    }
-    return {
-      type: 'header',
-      parameters: [{ type: 'text', text: value }],
-    };
-  }
+	if (headerType === 'text') {
+		// TEXT header with variable -> need a value. Static text headers
+		// (no variables) just ride along inside the template itself; no
+		// header component required on send.
+		const varInfo = extractTemplateVariables(template.header_content ?? '');
+		if (varInfo.variables.length === 0) return null;
+		const value = params.headerText;
+		const varLabel = varInfo.isNamed ? `{{${varInfo.variables[0]}}}` : '{{1}}';
+		if (!value || !value.trim()) {
+			throw new Error(
+				`Header text variable ${varLabel} requires a value — pass headerText.`,
+			);
+		}
+		const parameter: MetaSendParameter = varInfo.isNamed
+			? { type: 'text', parameter_name: varInfo.variables[0], text: value }
+			: { type: 'text', text: value };
+		return {
+			type: 'header',
+			parameters: [parameter],
+		};
+	}
 
-  // image / video / document — Meta requires the media component on
-  // every send. Prefer the caller's explicit override; fall back to the
-  // template's stored public URL.
-  //
-  // NOTE: `template.header_handle` is intentionally NOT used here. It's a
-  // Resumable-Upload handle that's only valid as the *creation-time*
-  // sample (`example.header_handle`); it is NOT a reusable send-time
-  // media id, and passing it as `{ id }` makes Meta reject the send. Only
-  // an explicit `headerMediaId` (a real /media upload id) is honored.
-  const link = params.headerMediaUrl ?? template.header_media_url;
-  const id = params.headerMediaId;
-  if (!link && !id) {
-    throw new Error(
-      `${headerType} header requires a media link or id at send time — set header_media_url on the template or pass headerMediaUrl/headerMediaId.`,
-    );
-  }
-  const mediaPayload: { link?: string; id?: string } = id ? { id } : { link };
-  return {
-    type: 'header',
-    parameters: [
-      headerType === 'image'
-        ? { type: 'image', image: mediaPayload }
-        : headerType === 'video'
-          ? { type: 'video', video: mediaPayload }
-          : { type: 'document', document: mediaPayload },
-    ],
-  };
+	// image / video / document — Meta requires the media component on
+	// every send. Prefer the caller's explicit override; fall back to the
+	// template's stored public URL.
+	//
+	// NOTE: `template.header_handle` is intentionally NOT used here. It's a
+	// Resumable-Upload handle that's only valid as the *creation-time*
+	// sample (`example.header_handle`); it is NOT a reusable send-time
+	// media id, and passing it as `{ id }` makes Meta reject the send. Only
+	// an explicit `headerMediaId` (a real /media upload id) is honored.
+	const link = params.headerMediaUrl ?? template.header_media_url;
+	const id = params.headerMediaId;
+	if (!link && !id) {
+		throw new Error(
+			`${headerType} header requires a media link or id at send time — set header_media_url on the template or pass headerMediaUrl/headerMediaId.`,
+		);
+	}
+	const mediaPayload: { link?: string; id?: string } = id ? { id } : { link };
+	return {
+		type: 'header',
+		parameters: [
+			headerType === 'image'
+				? { type: 'image', image: mediaPayload }
+				: headerType === 'video'
+					? { type: 'video', video: mediaPayload }
+					: { type: 'document', document: mediaPayload },
+		],
+	};
 }
 
 function buildBodyComponent(
-  template: MessageTemplate,
-  params: SendTimeParams,
+	template: MessageTemplate,
+	params: SendTimeParams,
 ): MetaSendComponent | null {
-  const varCount = extractVariableIndices(template.body_text).length;
-  const body = params.body ?? [];
-  if (varCount === 0 && body.length === 0) return null;
-  if (body.length < varCount) {
-    throw new Error(
-      `Body has ${varCount} variable(s) but only ${body.length} value(s) were supplied.`,
-    );
-  }
-  // Trim to the variable count — extra values are dropped silently so
-  // a legacy caller that passes too many doesn't error out.
-  const values = body.slice(0, varCount);
-  return {
-    type: 'body',
-    parameters: values.map((text) => ({ type: 'text', text: String(text) })),
-  };
+	const varInfo = extractTemplateVariables(template.body_text);
+	const varCount = varInfo.variables.length;
+	const body = params.body ?? [];
+	if (varCount === 0 && body.length === 0) return null;
+	if (body.length < varCount) {
+		throw new Error(
+			`Body has ${varCount} variable(s) but only ${body.length} value(s) were supplied.`,
+		);
+	}
+	// Trim to the variable count — extra values are dropped silently so
+	// a legacy caller that passes too many doesn't error out.
+	const values = body.slice(0, varCount);
+	if (varInfo.isNamed) {
+		return {
+			type: 'body',
+			parameters: values.map((text, i) => ({
+				type: 'text',
+				parameter_name: varInfo.variables[i],
+				text: String(text),
+			})),
+		};
+	}
+	return {
+		type: 'body',
+		parameters: values.map((text) => ({ type: 'text', text: String(text) })),
+	};
 }
 
 function buttonNeedsSendParam(

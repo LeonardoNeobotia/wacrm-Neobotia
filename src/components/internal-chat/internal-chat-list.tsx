@@ -17,6 +17,8 @@ import {
 	CheckCheck,
 } from "lucide-react";
 import type { InternalChat } from "@/types";
+import { usePresence } from "@/hooks/use-presence";
+import { PresenceDot } from "@/components/presence/presence-dot";
 
 interface InternalChatListProps {
 	chats: InternalChat[];
@@ -36,6 +38,7 @@ export function InternalChatList({
 	loading,
 }: InternalChatListProps) {
 	const { user, profile } = useAuth();
+	const { getPresence } = usePresence();
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filter, setFilter] = useState<ChatFilter>("all");
 
@@ -125,15 +128,15 @@ export function InternalChatList({
 					/>
 				</div>
 
-				{/* Filtros */}
-				<div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-xs">
+				{/* Filtros estilo pills modernos */}
+				<div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
 					<button
 						type="button"
 						onClick={() => setFilter("all")}
-						className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+						className={`px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap text-xs ${
 							filter === "all"
-								? "bg-primary/10 text-primary font-semibold"
-								: "text-muted-foreground hover:bg-muted"
+								? "bg-emerald-600 text-white font-medium shadow-xs"
+								: "text-muted-foreground hover:bg-muted/70"
 						}`}
 					>
 						Todos
@@ -141,10 +144,10 @@ export function InternalChatList({
 					<button
 						type="button"
 						onClick={() => setFilter("direct")}
-						className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+						className={`px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap text-xs ${
 							filter === "direct"
-								? "bg-primary/10 text-primary font-semibold"
-								: "text-muted-foreground hover:bg-muted"
+								? "bg-emerald-600 text-white font-medium shadow-xs"
+								: "text-muted-foreground hover:bg-muted/70"
 						}`}
 					>
 						Directos
@@ -152,10 +155,10 @@ export function InternalChatList({
 					<button
 						type="button"
 						onClick={() => setFilter("group")}
-						className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+						className={`px-3 py-1 rounded-full transition-all cursor-pointer whitespace-nowrap text-xs ${
 							filter === "group"
-								? "bg-primary/10 text-primary font-semibold"
-								: "text-muted-foreground hover:bg-muted"
+								? "bg-emerald-600 text-white font-medium shadow-xs"
+								: "text-muted-foreground hover:bg-muted/70"
 						}`}
 					>
 						Grupos
@@ -163,15 +166,17 @@ export function InternalChatList({
 					<button
 						type="button"
 						onClick={() => setFilter("invitations")}
-						className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+						className={`px-3 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap text-xs ${
 							filter === "invitations"
-								? "bg-primary/10 text-primary font-semibold"
-								: "text-muted-foreground hover:bg-muted"
+								? "bg-emerald-600 text-white font-medium shadow-xs"
+								: "text-muted-foreground hover:bg-muted/70"
 						}`}
 					>
 						Invitaciones
 						{pendingInvitationsCount > 0 && (
-							<span className="h-4 min-w-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+							<span className={`h-4 min-w-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+								filter === "invitations" ? "bg-white text-emerald-700" : "bg-amber-500 text-white"
+							}`}>
 								{pendingInvitationsCount}
 							</span>
 						)}
@@ -246,21 +251,29 @@ export function InternalChatList({
 									key={chat.id}
 									type="button"
 									onClick={() => onSelectChat(chat.id)}
-									className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+									className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all cursor-pointer ${
 										isSelected
-											? "bg-primary/10 border-l-4 border-l-primary"
-											: "hover:bg-muted/60"
+											? "bg-emerald-500/10 dark:bg-emerald-500/15 border-l-4 border-l-emerald-600 shadow-2xs"
+											: "hover:bg-muted/50"
 									}`}
 								>
-									{/* Avatar del Chat */}
-									<div
-										className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-xs"
-										style={{ backgroundColor: chat.color || "#10b981" }}
-									>
-										{isGroup ? (
-											<Users className="h-5 w-5" />
-										) : (
-											initials
+									{/* Avatar del Chat con presencia para directos */}
+									<div className="relative shrink-0">
+										<div
+											className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-xs"
+											style={{ backgroundColor: chat.color || "#10b981" }}
+										>
+											{isGroup ? (
+												<Users className="h-5 w-5" />
+											) : (
+												initials
+											)}
+										</div>
+										{!isGroup && otherMember && (
+											<PresenceDot
+												status={getPresence(otherMember.user_id)}
+												className="absolute bottom-0 right-0 ring-2 ring-card size-2.5"
+											/>
 										)}
 									</div>
 

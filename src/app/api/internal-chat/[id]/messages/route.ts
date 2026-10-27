@@ -110,8 +110,8 @@ export async function POST(request: Request, { params }: RouteParams) {
 			);
 		}
 
-		// 1. Insertar mensaje
-		const { data: insertedMsg, error: insertErr } = await adminClient
+		// 1. Insertar mensaje (con fallback seguro a 'file' si la BD aún no actualizó la restricción a video/audio)
+		let { data: insertedMsg, error: insertErr } = await adminClient
 			.from("internal_messages")
 			.insert({
 				chat_id: chatId,
@@ -124,6 +124,25 @@ export async function POST(request: Request, { params }: RouteParams) {
 			})
 			.select("*")
 			.single();
+
+		if (insertErr && (message_type === "video" || message_type === "audio")) {
+			console.warn("[POST messages] Reintentando con message_type='file':", insertErr.message);
+			const fallback = await adminClient
+				.from("internal_messages")
+				.insert({
+					chat_id: chatId,
+					sender_id: ctx.userId,
+					text: text?.trim() || "",
+					message_type: "file",
+					file_url: file_url || null,
+					file_name: file_name || null,
+					file_size: file_size || null,
+				})
+				.select("*")
+				.single();
+			insertedMsg = fallback.data;
+			insertErr = fallback.error;
+		}
 
 		if (insertErr || !insertedMsg) {
 			console.error("[POST /api/internal-chat/[id]/messages] error:", insertErr);

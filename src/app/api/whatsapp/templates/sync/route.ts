@@ -286,14 +286,46 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({
-      success: errors.length === 0,
-      total: metaTemplates.length,
-      inserted,
-      updated,
-      errors,
-      truncated: pageCount >= PAGE_CAP && nextUrl !== null,
-    })
+		let deleted = 0
+		if (pageCount < PAGE_CAP && nextUrl === null) {
+			// Pruning de plantillas que fueron eliminadas en Meta Business Manager.
+			// Solo evaluamos filas locales que tenian meta_template_id (es decir, pertenecian a Meta).
+			const metaIds = new Set(metaTemplates.map((t) => t.id))
+			const { data: localRows } = await supabase
+				.from('message_templates')
+				.select('id, meta_template_id')
+				.eq('account_id', accountId)
+				.not('meta_template_id', 'is', null)
+
+			if (localRows && localRows.length > 0) {
+				const staleIds = localRows
+					.filter((r) => r.meta_template_id && !metaIds.has(r.meta_template_id))
+					.map((r) => r.id)
+
+				if (staleIds.length > 0) {
+					const { error: delErr } = await supabase
+						.from('message_templates')
+						.delete()
+						.in('id', staleIds)
+
+					if (!delErr) {
+						deleted = staleIds.length
+					} else {
+						console.error('Error deleting stale templates:', delErr)
+					}
+				}
+			}
+		}
+
+		return NextResponse.json({
+			success: errors.length === 0,
+			total: metaTemplates.length,
+			inserted,
+			updated,
+			deleted,
+			errors,
+			truncated: pageCount >= PAGE_CAP && nextUrl !== null,
+		})
   } catch (error) {
     // Auth failures map to 401/403 rather than being folded into the
     // generic 500 below, which surfaces `error.message` as a sync failure.

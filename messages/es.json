@@ -335,7 +335,7 @@
       "notes": "NOTAS",
       "deals": "NEGOCIACIONES",
       "noTags": "Sin etiquetas",
-      "noDeals": "Sin ofertas",
+      "noDeals": "Sin negocios",
       "addNotePlaceholder": "Añadir una nota..."
     },
     "aiBanner": {
@@ -828,7 +828,8 @@
         "fieldMap": {
           "name": "Nombre",
           "phone": "Teléfono",
-          "email": "Correo electrónico"
+          "email": "Correo electrónico",
+          "company": "Empresa"
         }
       },
       "scheduleSend": {

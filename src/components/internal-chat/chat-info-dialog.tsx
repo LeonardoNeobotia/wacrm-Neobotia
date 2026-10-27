@@ -32,6 +32,8 @@ import {
 	Loader2,
 } from "lucide-react";
 import type { InternalChat, AccountMember } from "@/types";
+import { usePresence } from "@/hooks/use-presence";
+import { PresenceDot } from "@/components/presence/presence-dot";
 
 const PRESET_COLORS = [
 	"#10b981",
@@ -60,6 +62,7 @@ export function ChatInfoDialog({
 	onChatDeleted,
 }: ChatInfoDialogProps) {
 	const { user } = useAuth();
+	const { getPresence, getRow } = usePresence(open);
 
 	// Modo edicion del grupo
 	const [isEditing, setIsEditing] = useState(false);
@@ -97,6 +100,11 @@ export function ChatInfoDialog({
 	const isCreator = chat.created_by === user?.id;
 	const canManage = isGroup && (isMyChatAdmin || isCreator);
 	const members = chat.members || [];
+	const acceptedMembers = members.filter((m) => m.status === "accepted");
+	const onlineMembers = acceptedMembers.filter((m) => {
+		const s = getPresence(m.user_id);
+		return s === "online" || s === "away";
+	});
 
 	// Guardar edicion del grupo
 	const handleSaveEdit = async () => {
@@ -491,9 +499,17 @@ export function ChatInfoDialog({
 									)}
 								</div>
 								<DialogDescription className="text-xs text-muted-foreground mt-1">
-									{isGroup
-										? `${members.length} integrante(s) en total`
-										: "Conversación directa entre miembros"}
+									{isGroup ? (
+										<span className="flex items-center justify-center gap-1.5">
+											<span>{members.length} integrante(s)</span>
+											<span>·</span>
+											<span className={onlineMembers.length > 0 ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}>
+												{onlineMembers.length} en línea
+											</span>
+										</span>
+									) : (
+										"Conversación directa entre miembros"
+									)}
 								</DialogDescription>
 								{chat.description && (
 									<p className="text-xs text-foreground/80 mt-2 bg-muted/40 p-2 rounded-md max-w-sm">
@@ -526,6 +542,7 @@ export function ChatInfoDialog({
 										const initials = memberName.charAt(0).toUpperCase();
 										const isAdmin = member.role === "admin";
 										const isAccepted = member.status === "accepted";
+										const presence = getPresence(member.user_id);
 										const canModerateThisMember = canManage && !isMe && member.user_id !== chat.created_by;
 
 										return (
@@ -534,16 +551,22 @@ export function ChatInfoDialog({
 												className="flex items-center justify-between p-2 rounded-lg bg-card/60 border border-border/50 text-xs gap-2"
 											>
 												<div className="flex items-center gap-2.5 min-w-0 flex-1">
-													<div className="h-8 w-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-														{member.profile?.avatar_url ? (
-															<img
-																src={member.profile.avatar_url}
-																alt={memberName}
-																className="h-8 w-8 rounded-full object-cover"
-															/>
-														) : (
-															initials
-														)}
+													<div className="relative shrink-0">
+														<div className="h-8 w-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+															{member.profile?.avatar_url ? (
+																<img
+																	src={member.profile.avatar_url}
+																	alt={memberName}
+																	className="h-8 w-8 rounded-full object-cover"
+																/>
+															) : (
+																initials
+															)}
+														</div>
+														<PresenceDot
+															status={presence}
+															className="absolute bottom-0 right-0 ring-1 ring-card size-2.5"
+														/>
 													</div>
 													<div className="truncate min-w-0 flex-1">
 														<div className="flex items-center gap-1.5 truncate">
@@ -555,6 +578,15 @@ export function ChatInfoDialog({
 																	<Shield className="h-2.5 w-2.5" /> Admin
 																</span>
 															)}
+															{presence === "online" ? (
+																<span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+																	En línea
+																</span>
+															) : presence === "away" ? (
+																<span className="text-[10px] text-amber-500 font-medium">
+																	Ausente
+																</span>
+															) : null}
 														</div>
 														{member.profile?.email && (
 															<p className="text-[11px] text-muted-foreground truncate">

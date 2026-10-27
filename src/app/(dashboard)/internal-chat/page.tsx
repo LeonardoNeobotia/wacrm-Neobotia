@@ -164,10 +164,11 @@ function InternalChatPageInner() {
 		window.addEventListener("focus", handleFocusOrVisibility);
 		document.addEventListener("visibilitychange", handleFocusOrVisibility);
 
-		// Intervalo continuo de 4 segundos para actualizar estados y previsualizaciones
+		// Sincronizacion de respaldo discreta (cada 30s) solo si la pestana esta activa
 		const interval = setInterval(() => {
+			if (typeof document !== "undefined" && document.hidden) return;
 			fetchChatsRef.current?.();
-		}, 4000);
+		}, 30000);
 
 		return () => {
 			window.removeEventListener("focus", handleFocusOrVisibility);

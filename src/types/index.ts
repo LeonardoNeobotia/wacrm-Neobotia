@@ -684,7 +684,7 @@ export interface QuickReply {
 export type InternalChatType = 'direct' | 'group';
 export type InternalMemberRole = 'admin' | 'member';
 export type InternalMemberStatus = 'pending' | 'accepted' | 'declined';
-export type InternalMessageType = 'text' | 'image' | 'file' | 'system';
+export type InternalMessageType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'system';
 
 export interface InternalChatMember {
 	id: string;
@@ -740,4 +740,45 @@ export interface InternalChat {
 	last_message?: InternalMessage | null;
 	unread_count?: number;
 	my_membership?: InternalChatMember;
+}
+
+export interface InternalChatNote {
+	id: string;
+	chat_id: string;
+	account_id: string;
+	created_by: string | null;
+	title: string | null;
+	content: string;
+	color: string;
+	is_pinned: boolean;
+	created_at: string;
+	updated_at: string;
+	author_profile?: {
+		full_name: string | null;
+		avatar_url: string | null;
+	} | null;
+}
+
+export interface InternalChatTask {
+	id: string;
+	chat_id: string;
+	account_id: string;
+	created_by: string | null;
+	assigned_to?: string | null;
+	title: string;
+	description?: string | null;
+	priority: 'low' | 'medium' | 'high' | 'urgent';
+	status: 'pending' | 'completed';
+	due_date?: string | null;
+	completed_at?: string | null;
+	created_at: string;
+	updated_at: string;
+	assignee_profile?: {
+		full_name: string | null;
+		avatar_url: string | null;
+	} | null;
+	creator_profile?: {
+		full_name: string | null;
+		avatar_url: string | null;
+	} | null;
 }

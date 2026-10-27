@@ -487,18 +487,7 @@ export function ContactSidebar({
 						</div>
 						<div className="mt-2 space-y-2">
 							{deals.length === 0 ? (
-								<div className="rounded-lg border border-dashed border-border p-3 text-center">
-									<p className="text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
-									<Button
-										variant="outline"
-										size="sm"
-										className="mt-2 h-7 text-xs border-border bg-muted/50 hover:bg-muted"
-										onClick={() => setCreateDealOpen(true)}
-									>
-										<Plus className="mr-1.5 h-3 w-3" />
-										Crear negocio
-									</Button>
-								</div>
+								<p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
 							) : (
 								deals.map((deal) => (
 									<div

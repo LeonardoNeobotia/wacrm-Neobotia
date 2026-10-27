@@ -21,58 +21,62 @@ import {
   LayoutTemplate,
   Loader2,
 } from "lucide-react";
-import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
+import {
+	extractTemplateVariables,
+	extractVariableIndices,
+} from "@/lib/whatsapp/template-validators";
+import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { useTranslations } from "next-intl";
 
 export interface TemplateSendValues {
-  body: string[];
-  headerText?: string;
-  buttonParams?: Record<number, string>;
+	body: string[];
+	headerText?: string;
+	buttonParams?: Record<number, string>;
 }
 
 interface TemplatePickerProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
-}
-
-function renderBodyPreview(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    const value = params[idx];
-    return value && value.trim().length > 0 ? value : `{{${raw}}}`;
-  });
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
 }
 
 interface UrlButtonSlot {
-  index: number;
-  text: string;
-  url: string;
+	index: number;
+	text: string;
+	url: string;
+}
+
+interface VariableSlots {
+	bodyVars: string[];
+	headerVar: string | null;
+	urlButtonSlots: UrlButtonSlot[];
 }
 
 /**
  * Templates may need values for: body variables, a text-header
  * variable, and per-URL-button suffixes. Collect them all so the
  * send-message path doesn't 400 on missing parameters.
+ * Supports both positional {{1}} and named {{nombre_cliente}} variables.
  */
-function collectVariableSlots(template: MessageTemplate): {
-  bodyVars: number[];
-  headerVarCount: number;
-  urlButtonSlots: UrlButtonSlot[];
-} {
-  const bodyVars = extractVariableIndices(template.body_text);
-  const headerVarCount =
-    template.header_type === "text" && template.header_content
-      ? extractVariableIndices(template.header_content).length
-      : 0;
-  const urlButtonSlots: UrlButtonSlot[] = [];
-  (template.buttons ?? []).forEach((b, i) => {
-    if (b.type === "URL" && extractVariableIndices(b.url).length > 0) {
-      urlButtonSlots.push({ index: i, text: b.text, url: b.url });
-    }
-  });
-  return { bodyVars, headerVarCount, urlButtonSlots };
+function collectVariableSlots(template: MessageTemplate): VariableSlots {
+	const bodyVars = extractTemplateVariables(template.body_text).variables;
+	const headerVars =
+		template.header_type === "text" && template.header_content
+			? extractTemplateVariables(template.header_content).variables
+			: [];
+	const urlButtonSlots: UrlButtonSlot[] = [];
+	(template.buttons ?? []).forEach((b, i) => {
+		if (b.type === "URL" && extractVariableIndices(b.url).length > 0) {
+			urlButtonSlots.push({ index: i, text: b.text, url: b.url });
+		}
+	});
+	return {
+		bodyVars,
+		headerVar: headerVars.length > 0 ? headerVars[0] : null,
+		urlButtonSlots,
+	};
 }
+
 
 export function TemplatePicker({
   open,
@@ -144,136 +148,136 @@ export function TemplatePicker({
     onOpenChange(next);
   }
 
-  function pickTemplate(template: MessageTemplate) {
-    const slots = collectVariableSlots(template);
-    const noInputsNeeded =
-      slots.bodyVars.length === 0 &&
-      slots.headerVarCount === 0 &&
-      slots.urlButtonSlots.length === 0;
-    if (noInputsNeeded) {
-      onSelect(template, { body: [] });
-      handleOpenChange(false);
-      return;
-    }
-    setSelected(template);
-    setParams(new Array(slots.bodyVars.length).fill(""));
-    setHeaderText("");
-    setButtonParams({});
-  }
+	function pickTemplate(template: MessageTemplate) {
+		const slots = collectVariableSlots(template);
+		const noInputsNeeded =
+			slots.bodyVars.length === 0 &&
+			!slots.headerVar &&
+			slots.urlButtonSlots.length === 0;
+		if (noInputsNeeded) {
+			onSelect(template, { body: [] });
+			handleOpenChange(false);
+			return;
+		}
+		setSelected(template);
+		setParams(new Array(slots.bodyVars.length).fill(""));
+		setHeaderText("");
+		setButtonParams({});
+	}
 
-  function confirm() {
-    if (!selected) return;
-    const values: TemplateSendValues = { body: params };
-    if (headerText.trim()) values.headerText = headerText.trim();
-    if (Object.keys(buttonParams).length > 0) {
-      values.buttonParams = Object.fromEntries(
-        Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
-      );
-    }
-    onSelect(selected, values);
-    handleOpenChange(false);
-  }
+	function confirm() {
+		if (!selected) return;
+		const values: TemplateSendValues = { body: params };
+		if (headerText.trim()) values.headerText = headerText.trim();
+		if (Object.keys(buttonParams).length > 0) {
+			values.buttonParams = Object.fromEntries(
+				Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
+			);
+		}
+		onSelect(selected, values);
+		handleOpenChange(false);
+	}
 
-  const slots = useMemo(
-    () => (selected ? collectVariableSlots(selected) : null),
-    [selected],
-  );
-  const canConfirm =
-    !!selected &&
-    !!slots &&
-    slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
-    (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
-    slots.urlButtonSlots.every(
-      (s) => (buttonParams[s.index] ?? "").trim().length > 0,
-    );
+	const slots = useMemo(
+		() => (selected ? collectVariableSlots(selected) : null),
+		[selected],
+	);
+	const canConfirm =
+		!!selected &&
+		!!slots &&
+		slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
+		(!slots.headerVar || headerText.trim().length > 0) &&
+		slots.urlButtonSlots.every(
+			(s) => (buttonParams[s.index] ?? "").trim().length > 0,
+		);
 
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="border-border bg-popover sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-popover-foreground">
-            <LayoutTemplate className="h-4 w-4 text-primary" />
-            {selected ? selected.name : t("sendTemplate")}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground">
-            {selected
-              ? t("fillPlaceholders")
-              : t("pickTemplate")}
-          </DialogDescription>
-        </DialogHeader>
+	return (
+		<Dialog open={open} onOpenChange={handleOpenChange}>
+			<DialogContent className="border-border bg-popover sm:max-w-lg">
+				<DialogHeader>
+					<DialogTitle className="flex items-center gap-2 text-popover-foreground">
+						<LayoutTemplate className="h-4 w-4 text-primary" />
+						{selected ? selected.name : t("sendTemplate")}
+					</DialogTitle>
+					<DialogDescription className="text-muted-foreground">
+						{selected
+							? t("fillPlaceholders")
+							: t("pickTemplate")}
+					</DialogDescription>
+				</DialogHeader>
 
-        {!selected ? (
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              </div>
-            ) : templates.length === 0 ? (
-              <div className="rounded-md border border-border bg-background/50 p-6 text-center">
-                <p className="text-sm text-popover-foreground">{t("noApprovedTemplates")}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("noApprovedTemplatesHint")}
-                </p>
-              </div>
-            ) : (
-              templates.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => pickTemplate(t)}
-                  className="w-full rounded-md border border-border bg-background/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-popover"
-                >
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-popover-foreground">
-                          {t.name}
-                        </p>
-                        <Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
-                          {t.category}
-                        </Badge>
-                        {t.language && (
-                          <span className="text-[10px] uppercase text-muted-foreground">
-                            {t.language}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                        {t.body_text}
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="rounded-md border border-border bg-background/50 p-3">
-              <p className="mb-1 text-xs text-muted-foreground">{t("preview")}</p>
-              <p className="whitespace-pre-wrap text-sm text-popover-foreground">
-                {renderBodyPreview(selected.body_text, params)}
-              </p>
-              {selected.footer_text && (
-                <p className="mt-2 text-xs italic text-muted-foreground">
-                  {selected.footer_text}
-                </p>
-              )}
-            </div>
-            {slots && slots.headerVarCount > 0 && (
-              <div className="space-y-1">
-                <Label className="text-xs text-popover-foreground">
-                  {`Header {{1}}`}
-                </Label>
-                <Input
-                  value={headerText}
-                  onChange={(e) => setHeaderText(e.target.value)}
-                  placeholder={t("headerValuePlaceholder")}
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-            )}
+				{!selected ? (
+					<div className="max-h-[60vh] space-y-2 overflow-y-auto">
+						{loading ? (
+							<div className="flex items-center justify-center py-8">
+								<Loader2 className="h-5 w-5 animate-spin text-primary" />
+							</div>
+						) : templates.length === 0 ? (
+							<div className="rounded-md border border-border bg-background/50 p-6 text-center">
+								<p className="text-sm text-popover-foreground">{t("noApprovedTemplates")}</p>
+								<p className="mt-1 text-xs text-muted-foreground">
+									{t("noApprovedTemplatesHint")}
+								</p>
+							</div>
+						) : (
+							templates.map((t) => (
+								<button
+									key={t.id}
+									type="button"
+									onClick={() => pickTemplate(t)}
+									className="w-full rounded-md border border-border bg-background/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-popover"
+								>
+									<div className="flex items-start gap-2">
+										<div className="min-w-0 flex-1">
+											<div className="flex flex-wrap items-center gap-2">
+												<p className="truncate text-sm font-medium text-popover-foreground">
+													{t.name}
+												</p>
+												<Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
+													{t.category}
+												</Badge>
+												{t.language && (
+													<span className="text-[10px] uppercase text-muted-foreground">
+														{t.language}
+													</span>
+												)}
+											</div>
+											<p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+												{t.body_text}
+											</p>
+										</div>
+										<ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+									</div>
+								</button>
+							))
+						)}
+					</div>
+				) : (
+					<div className="space-y-3">
+						<div className="rounded-md border border-border bg-background/50 p-3">
+							<p className="mb-1 text-xs text-muted-foreground">{t("preview")}</p>
+							<p className="whitespace-pre-wrap text-sm text-popover-foreground">
+								{renderTemplateBody(selected.body_text, params)}
+							</p>
+							{selected.footer_text && (
+								<p className="mt-2 text-xs italic text-muted-foreground">
+									{selected.footer_text}
+								</p>
+							)}
+						</div>
+						{slots && slots.headerVar && (
+							<div className="space-y-1">
+								<Label className="text-xs text-popover-foreground">
+									{`Header {{${slots.headerVar}}}`}
+								</Label>
+								<Input
+									value={headerText}
+									onChange={(e) => setHeaderText(e.target.value)}
+									placeholder={t("headerValuePlaceholder")}
+									className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+								/>
+							</div>
+						)}
             {slots?.bodyVars.map((v, i) => (
               <div key={v} className="space-y-1">
                 <Label className="text-xs text-popover-foreground">{`Body {{${v}}}`}</Label>

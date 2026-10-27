@@ -57,6 +57,43 @@ export function validateTemplateName(name: string): void {
   }
 }
 
+export interface TemplateVariableInfo {
+  isNamed: boolean;
+  variables: string[];
+}
+
+/**
+ * Extract variables from text, supporting both positional {{1}} and named {{nombre_cliente}}.
+ * Returns { isNamed: false, variables: ['1', '2'] } or { isNamed: true, variables: ['nombre_cliente'] }.
+ */
+export function extractTemplateVariables(text?: string | null): TemplateVariableInfo {
+  if (!text) return { isNamed: false, variables: [] };
+  const matches = Array.from(text.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g));
+  if (!matches.length) return { isNamed: false, variables: [] };
+
+  const rawVars = matches.map((m) => m[1].trim());
+  const allNumeric = rawVars.every((v) => /^\d+$/.test(v));
+
+  if (allNumeric) {
+    const sorted = Array.from(new Set(rawVars.map(Number)))
+      .filter((n) => Number.isFinite(n) && n >= 1)
+      .sort((a, b) => a - b)
+      .map(String);
+    return { isNamed: false, variables: sorted };
+  } else {
+    // Preservar orden de aparición para variables con nombre
+    const seen = new Set<string>();
+    const named: string[] = [];
+    for (const v of rawVars) {
+      if (!seen.has(v)) {
+        seen.add(v);
+        named.push(v);
+      }
+    }
+    return { isNamed: true, variables: named };
+  }
+}
+
 /**
  * Extract sorted, deduplicated {{N}} indices from a string. Returns
  * `[1, 2, 4]` for `"Hi {{1}} {{2}}, item {{4}}"`.

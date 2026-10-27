@@ -8,6 +8,7 @@ import {
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
 import { Contact, MessageTemplate } from '@/types';
+import { extractTemplateVariables } from '@/lib/whatsapp/template-validators';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
 
@@ -97,19 +98,27 @@ export function resolveVariables(
   variables: Record<string, VariableMapping>,
   contact: Contact,
   customValues?: Map<string, string>,
+  templateBodyText?: string | null,
 ): string[] {
-  // Keys are typically "1","2",... — numeric-aware sort keeps
-  // {{1}} before {{10}}.
-  const keys = Object.keys(variables).sort((a, b) => {
-    const an = Number(a);
-    const bn = Number(b);
-    if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
-    return a.localeCompare(b);
-  });
+  let keys: string[];
+  if (templateBodyText) {
+    const varInfo = extractTemplateVariables(templateBodyText);
+    keys = varInfo.variables;
+  } else {
+    // Keys are typically "1","2",... — numeric-aware sort keeps
+    // {{1}} before {{10}}.
+    keys = Object.keys(variables).sort((a, b) => {
+      const an = Number(a);
+      const bn = Number(b);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+      return a.localeCompare(b);
+    });
+  }
 
   return keys.map((key) => {
     const v = variables[key];
-    if (v.type === 'static') return v.value;
+    if (!v) return '';
+    if (v.type === 'static') return v.value ?? '';
 
     if (v.type === 'field') {
       const fieldMap: Record<string, string | undefined> = {
@@ -414,6 +423,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             payload.variables,
             contact,
             customValueIndex.get(contact.id),
+            payload.template.body_text,
           ),
         ]),
       );

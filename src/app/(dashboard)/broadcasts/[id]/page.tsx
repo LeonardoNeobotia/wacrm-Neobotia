@@ -624,8 +624,11 @@ export default function BroadcastDetailPage() {
                           ? new Date(recipient.read_at).toLocaleString()
                           : '-'}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate text-xs text-red-400">
-                        {recipient.error_message ?? '-'}
+                      <TableCell
+                        className="max-w-xs truncate text-xs text-red-400"
+                        title={recipient.error_message || (recipient.status === 'failed' ? 'Entrega no completada por Meta' : undefined)}
+                      >
+                        {recipient.error_message || (recipient.status === 'failed' ? 'Fallo en la entrega de Meta' : '-')}
                       </TableCell>
                     </TableRow>
                   );
