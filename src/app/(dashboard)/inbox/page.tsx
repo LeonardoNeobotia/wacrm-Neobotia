@@ -423,8 +423,16 @@ function InboxPageInner() {
         // conversationId didn't change, MessageThread wouldn't
         // refetch. The thread would read "No messages yet" until a
         // full page reload rehydrated state from scratch.
-        if (activeConversation?.id === deepLinkConvId) return;
-        const match = loaded.find((c) => c.id === deepLinkConvId);
+        if (
+          activeConversation?.id === deepLinkConvId ||
+          activeConversation?.contact_id === deepLinkConvId
+        ) return;
+
+        // Coincidencia tanto por ID de conversacion como por contact_id
+        const match = loaded.find(
+          (c) => c.id === deepLinkConvId || c.contact_id === deepLinkConvId,
+        );
+
         if (match) {
           setActiveConversation(match);
           setActiveContact(match.contact ?? null);
@@ -440,10 +448,32 @@ function InboxPageInner() {
               ),
             );
           }
+        } else {
+          // Si no esta en la lista inicial (ej. lead nuevo o enlace por contact_id), buscarlo en Supabase
+          const supabase = createClient();
+          supabase
+            .from("conversations")
+            .select(CONVERSATION_SELECT)
+            .or(`id.eq.${deepLinkConvId},contact_id.eq.${deepLinkConvId}`)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then(({ data: remoteRow, error: remoteErr }) => {
+              if (!remoteErr && remoteRow) {
+                const fetched = normalizeConversation(remoteRow);
+                setConversations((prev) => {
+                  if (prev.some((c) => c.id === fetched.id)) return prev;
+                  return [fetched, ...prev];
+                });
+                setActiveConversation(fetched);
+                setActiveContact(fetched.contact ?? null);
+                setMessages([]);
+              }
+            });
         }
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkConvId, activeConversation?.id, activeConversation?.contact_id]
   );
 
   const handleSelectConversation = useCallback(

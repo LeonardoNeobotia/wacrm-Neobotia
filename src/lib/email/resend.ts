@@ -98,13 +98,23 @@ export function renderBaseEmailTemplate({
 	actionText?: string;
 	footerHint?: string;
 }): string {
-	const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+	const rawAppUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://neowapp.neobotia.cl').trim();
+	// Si todavía apunta al host temporal de pruebas de Easypanel, priorizar el dominio oficial
+	const cleanAppUrl = rawAppUrl.includes('ibzjvi.easypanel.host')
+		? 'https://neowapp.neobotia.cl'
+		: rawAppUrl.replace(/\/+$/, '');
+
 	const safeActionUrl = sanitizeActionUrl(actionUrl);
-	const resolvedActionUrl = safeActionUrl
-		? safeActionUrl.startsWith('http')
-			? safeActionUrl
-			: `${appUrl}${safeActionUrl}`
-		: undefined;
+	let resolvedActionUrl: string | undefined = undefined;
+
+	if (safeActionUrl) {
+		if (safeActionUrl.startsWith('http://') || safeActionUrl.startsWith('https://')) {
+			resolvedActionUrl = safeActionUrl;
+		} else {
+			const cleanPath = safeActionUrl.startsWith('/') ? safeActionUrl : `/${safeActionUrl}`;
+			resolvedActionUrl = `${cleanAppUrl}${cleanPath}`;
+		}
+	}
 
 	const safeTitle = escapeHtml(title);
 	const safeSubtitle = subtitle ? escapeHtml(subtitle) : undefined;
@@ -370,6 +380,7 @@ export async function sendWebLeadEmail({
 	dealTitle,
 	customFields,
 	contactId,
+	conversationId,
 }: {
 	toEmail: string | string[];
 	formName: string;
@@ -380,6 +391,7 @@ export async function sendWebLeadEmail({
 	dealTitle?: string;
 	customFields?: Array<{ label: string; value: string }>;
 	contactId?: string;
+	conversationId?: string;
 }): Promise<SendEmailResult> {
 	const title = 'Nuevo lead recibido';
 	const subtitle = `Formulario: ${escapeHtml(formName)}`;
@@ -439,7 +451,8 @@ export async function sendWebLeadEmail({
 		<p>Puedes gestionar el contacto y continuar la conversacion desde la bandeja del CRM.</p>
 	`;
 
-	const actionUrl = contactId ? `/inbox?c=${encodeURIComponent(contactId)}` : '/inbox';
+	const deepLinkId = conversationId || contactId;
+	const actionUrl = deepLinkId ? `/inbox?c=${encodeURIComponent(deepLinkId)}` : '/inbox';
 
 	return sendEmail({
 		to: toEmail,

@@ -386,6 +386,41 @@ export async function POST(
 				}
 			}
 
+			// 9.1 Asegurar que exista una conversacion para que el lead sea accesible en el Inbox
+			let conversationId: string | undefined = undefined
+			if (contactId) {
+				try {
+					const { data: existingConv } = await supabase
+						.from("conversations")
+						.select("id")
+						.eq("account_id", account_id)
+						.eq("contact_id", contactId)
+						.order("created_at", { ascending: false })
+						.limit(1)
+
+					if (existingConv && existingConv.length > 0) {
+						conversationId = existingConv[0].id
+					} else {
+						const { data: newConv } = await supabase
+							.from("conversations")
+							.insert({
+								account_id,
+								user_id: ownerUserId,
+								contact_id: contactId,
+								status: "open",
+							})
+							.select("id")
+							.single()
+
+						if (newConv) {
+							conversationId = newConv.id
+						}
+					}
+				} catch {
+					// Falla silenciosa si no se puede inicializar conversacion anticipadamente
+				}
+			}
+
 			if (targetEmails.length > 0) {
 				const emailResult = await sendWebLeadEmail({
 					toEmail: targetEmails,
@@ -397,6 +432,7 @@ export async function POST(
 					dealTitle: generatedDealTitle,
 					customFields: customEntries.map((e) => ({ label: e.label, value: e.value })),
 					contactId: contactId || undefined,
+					conversationId: conversationId || undefined,
 				})
 				if (!emailResult.success) {
 					console.warn("[forms/submit] No se pudo despachar la notificacion por correo interno.")
