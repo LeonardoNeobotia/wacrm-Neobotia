@@ -13,12 +13,24 @@ export async function GET(request: NextRequest) {
 	const next = searchParams.get('next') ?? '/'
 	const code = searchParams.get('code')
 
-	const redirectTo = request.nextUrl.clone()
-	redirectTo.pathname = next
-	redirectTo.searchParams.delete('token_hash')
-	redirectTo.searchParams.delete('type')
-	redirectTo.searchParams.delete('code')
-	redirectTo.searchParams.delete('next')
+	// Resolver la URL publica base evitando 0.0.0.0 o puertos de contenedor interno
+	const forwardedHost = request.headers.get('x-forwarded-host')
+	const host = request.headers.get('host')
+	const forwardedProto = request.headers.get('x-forwarded-proto') ?? 'https'
+	const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+
+	let baseUrl: string
+	if (siteUrl && siteUrl.startsWith('http')) {
+		baseUrl = siteUrl.replace(/\/$/, '')
+	} else if (forwardedHost && !forwardedHost.includes('0.0.0.0')) {
+		baseUrl = `${forwardedProto}://${forwardedHost}`
+	} else if (host && !host.includes('0.0.0.0')) {
+		baseUrl = `${forwardedProto}://${host}`
+	} else {
+		baseUrl = request.nextUrl.origin.includes('0.0.0.0') ? 'https://neowapp.neobotia.cl' : request.nextUrl.origin
+	}
+
+	const redirectUrl = new URL(next, baseUrl)
 
 	const supabase = await createClient()
 
@@ -26,7 +38,7 @@ export async function GET(request: NextRequest) {
 	if (code) {
 		const { error } = await supabase.auth.exchangeCodeForSession(code)
 		if (!error) {
-			return NextResponse.redirect(redirectTo)
+			return NextResponse.redirect(redirectUrl)
 		}
 	}
 
@@ -37,12 +49,12 @@ export async function GET(request: NextRequest) {
 			token_hash,
 		})
 		if (!error) {
-			return NextResponse.redirect(redirectTo)
+			return NextResponse.redirect(redirectUrl)
 		}
 	}
 
-	// Si falla la verificación, redirige a login con mensaje descriptivo
-	redirectTo.pathname = '/login'
-	redirectTo.searchParams.set('error', 'El enlace de recuperación es inválido o ha expirado')
-	return NextResponse.redirect(redirectTo)
+	// Si falla la verificacion, redirige a login con mensaje descriptivo
+	const loginUrl = new URL('/login', baseUrl)
+	loginUrl.searchParams.set('error', 'El enlace de recuperacion es invalido o ha expirado')
+	return NextResponse.redirect(loginUrl)
 }
