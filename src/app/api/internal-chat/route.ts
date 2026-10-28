@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
 import { broadcastChatCreated } from "@/lib/internal-chat/server-realtime";
+import { sendInternalChatInviteEmail } from "@/lib/email/resend";
 import type { InternalChat, InternalChatMember, InternalMessage } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -289,6 +290,32 @@ export async function POST(request: Request) {
 			}));
 
 			await adminClient.from("notifications").insert(notificationsToInsert);
+
+			// Enviar notificaciones por correo a los miembros invitados
+			try {
+				const invitedUserIds = invitedMembers.map((m: any) => m.user_id);
+				const { data: invitedProfiles } = await adminClient
+					.from("profiles")
+					.select("email, full_name")
+					.in("user_id", invitedUserIds);
+
+				if (invitedProfiles && invitedProfiles.length > 0) {
+					for (const prof of invitedProfiles) {
+						if (prof.email) {
+							sendInternalChatInviteEmail({
+								toEmail: prof.email,
+								recipientName: prof.full_name || undefined,
+								inviterName: creatorName,
+								chatName: finalName || (type === "group" ? "Grupo de Trabajo" : creatorName),
+								isGroup: type === "group",
+								chatId: chat.id,
+							}).catch((e) => console.warn("[internal-chat] Error al enviar email de invitacion:", e));
+						}
+					}
+				}
+			} catch (emailErr) {
+				console.warn("[internal-chat] Error al despachar correos de invitacion:", emailErr);
+			}
 		}
 
 		// 5. Insertar mensaje inicial del sistema

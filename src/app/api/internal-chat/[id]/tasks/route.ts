@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { sendTaskAssignedEmail } from "@/lib/email/resend";
 import type { InternalChatTask } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -152,10 +153,36 @@ export async function POST(request: Request, { params }: RouteParams) {
 		const profilesToLoad = [ctx.userId, assigned_to].filter(Boolean);
 		const { data: profiles } = await adminClient
 			.from("profiles")
-			.select("user_id, full_name, avatar_url")
+			.select("user_id, full_name, avatar_url, email")
 			.in("user_id", profilesToLoad);
 
 		const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
+
+		// Enviar notificacion por correo si se asigno a otro usuario
+		if (assigned_to && assigned_to !== ctx.userId) {
+			const assigneeProfile = profileMap.get(assigned_to);
+			const creatorProfile = profileMap.get(ctx.userId);
+
+			if (assigneeProfile?.email) {
+				const { data: chatData } = await adminClient
+					.from("internal_chats")
+					.select("name")
+					.eq("id", chatId)
+					.single();
+
+				sendTaskAssignedEmail({
+					toEmail: assigneeProfile.email,
+					assigneeName: assigneeProfile.full_name || undefined,
+					assignedByName: creatorProfile?.full_name || undefined,
+					taskTitle: newTask.title,
+					taskPriority: newTask.priority,
+					dueDate: newTask.due_date,
+					chatName: chatData?.name || undefined,
+				}).catch((err) => {
+					console.warn("[tasks] Error al enviar email de asignacion de tarea:", err);
+				});
+			}
+		}
 
 		const taskWithProfiles: InternalChatTask = {
 			...newTask,

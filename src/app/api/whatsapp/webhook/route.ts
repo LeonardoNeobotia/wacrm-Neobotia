@@ -15,6 +15,7 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { sendNewInboxContactEmail } from '@/lib/email/resend'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -770,6 +771,58 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // Notificar por correo cuando llega un contacto nuevo por primera vez a la bandeja
+  // OJO anti-duplicados: si el contacto ya envio un formulario web, ya genero la notificacion consolidada de lead/negocio
+  if (isFirstInboundMessage) {
+    try {
+      // Verificar si ya tiene envios de formularios registrados para no duplicar correos al equipo
+      const { count: formSubCount } = await supabaseAdmin()
+        .from('web_form_submissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('contact_id', contactRecord.id)
+
+      if (!formSubCount || formSubCount === 0) {
+        // Obtener miembros del espacio de trabajo
+        const { data: memberProfiles } = await supabaseAdmin()
+          .from('profiles')
+          .select('email')
+          .eq('account_id', accountId)
+          .not('email', 'is', null)
+
+        const memberEmails = (memberProfiles || [])
+          .map((p: any) => p.email)
+          .filter((e: any): e is string => Boolean(e) && e.includes('@'))
+
+        // Fallback al configOwnerUserId si no hay miembros vinculados
+        let targetEmails = memberEmails
+        if (targetEmails.length === 0) {
+          const { data: ownerProfile } = await supabaseAdmin()
+            .from('profiles')
+            .select('email')
+            .eq('user_id', configOwnerUserId)
+            .single()
+          if (ownerProfile?.email) {
+            targetEmails = [ownerProfile.email]
+          }
+        }
+
+        if (targetEmails.length > 0) {
+          sendNewInboxContactEmail({
+            toEmail: targetEmails,
+            contactName: contactRecord.name || senderPhone,
+            contactPhone: senderPhone,
+            messagePreview: contentText
+              ? (contentText.length > 120 ? contentText.slice(0, 117) + '...' : contentText)
+              : undefined,
+            conversationId: conversation.id,
+          }).catch((e) => console.warn('[webhook] Error al enviar email de nuevo contacto:', e))
+        }
+      }
+    } catch (emailErr) {
+      console.warn('[webhook] Error en despacho de notificacion nuevo contacto:', emailErr)
+    }
+  }
 
   // ============================================================
   // Flow runner dispatch.

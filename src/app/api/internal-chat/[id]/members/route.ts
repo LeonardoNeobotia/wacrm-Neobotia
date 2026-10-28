@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { sendInternalChatInviteEmail } from "@/lib/email/resend";
 
 function getAdminClient() {
 	return createSupabaseClient(
@@ -94,6 +95,31 @@ export async function POST(request: Request, { params }: RouteParams) {
 		}));
 
 		await adminClient.from("notifications").insert(notifications);
+
+		// Enviar notificaciones por correo a los miembros agregados
+		try {
+			const { data: addedProfiles } = await adminClient
+				.from("profiles")
+				.select("email, full_name")
+				.in("user_id", toAdd);
+
+			if (addedProfiles && addedProfiles.length > 0) {
+				for (const prof of addedProfiles) {
+					if (prof.email) {
+						sendInternalChatInviteEmail({
+							toEmail: prof.email,
+							recipientName: prof.full_name || undefined,
+							inviterName,
+							chatName: chat.name || "Chat Grupal",
+							isGroup: true,
+							chatId,
+						}).catch((e) => console.warn("[members] Error al enviar email de invitacion:", e));
+					}
+				}
+			}
+		} catch (emailErr) {
+			console.warn("[members] Error en despacho de correos de invitacion:", emailErr);
+		}
 
 		return NextResponse.json({ success: true, added_count: toAdd.length });
 	} catch (err) {

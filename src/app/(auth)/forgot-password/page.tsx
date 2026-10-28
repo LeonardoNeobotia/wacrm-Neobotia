@@ -55,9 +55,7 @@ export default function ForgotPasswordPage() {
               {t("checkEmailTitle")}
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              {t.rich("checkEmailDesc", {
-                email: () => <span className="text-foreground">{email}</span>
-              })}
+              {t("checkEmailDesc", { email })}
             </CardDescription>
           </CardHeader>
           <CardContent>

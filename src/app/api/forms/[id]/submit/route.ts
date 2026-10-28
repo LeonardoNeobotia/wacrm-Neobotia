@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { sendWebLeadEmail } from "@/lib/email/resend"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +59,17 @@ export async function POST(
 		if (body.website_url_hp || body._hp_website_confirm) {
 			console.warn("[forms/submit] Spam bot bloqueado exitosamente via honeypot")
 			return NextResponse.json({ success: true }, { headers: corsHeaders })
+		}
+
+		// 0.1 Proteccion Rate Limit: Maximo 10 envios por minuto por IP para evitar bombardeo de correos y saturacion de cuota
+		const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown"
+		const rateLimit = checkRateLimit(`form_submit:${id}:${clientIp}`, { limit: 10, windowMs: 60_000 })
+		if (!rateLimit.success) {
+			console.warn(`[forms/submit] Rate limit excedido para IP ${clientIp} en formulario ${id}`)
+			return NextResponse.json(
+				{ error: "Has superado el límite de envíos. Por favor espera un momento antes de volver a intentar." },
+				{ status: 429, headers: corsHeaders }
+			)
 		}
 
 		// Service role para escribir sin autenticacion del visitante
@@ -277,10 +290,12 @@ export async function POST(
 
 		// 6. Crear negociacion (Deal) si hay pipeline configurado
 		let createdDealId: string | null = null
+		let generatedDealTitle: string | undefined = undefined
 		if (pipeline_id && stage_id && contactId) {
 			const dealTitle = asunto
 				? `${asunto} - ${company || name || "Lead Web"}`
 				: `Web Lead - ${company || name || email || normalizedPhone || "Sin nombre"}`
+			generatedDealTitle = dealTitle
 
 			// Calcular fecha estimada de cierre a 3 meses desde hoy (YYYY-MM-DD)
 			const closeDate = new Date()
@@ -343,6 +358,49 @@ export async function POST(
 			}
 		} catch (subErr) {
 			console.warn("[forms/submit] Excepcion al registrar submission:", subErr)
+		}
+
+		// 9. Enviar correo consolidado con lead y negociacion a los miembros del equipo
+		try {
+			// Obtener correos de los miembros del espacio de trabajo
+			const { data: memberProfiles } = await supabase
+				.from("profiles")
+				.select("email")
+				.eq("account_id", account_id)
+				.not("email", "is", null)
+
+			const memberEmails = (memberProfiles || [])
+				.map((p: any) => p.email)
+				.filter((e: any): e is string => Boolean(e) && e.includes("@"))
+
+			// Fallback al owner_user_id si no hay miembros vinculados por account_id
+			let targetEmails = memberEmails
+			if (targetEmails.length === 0) {
+				const { data: ownerProfile } = await supabase
+					.from("profiles")
+					.select("email")
+					.eq("user_id", ownerUserId)
+					.single()
+				if (ownerProfile?.email) {
+					targetEmails = [ownerProfile.email]
+				}
+			}
+
+			if (targetEmails.length > 0) {
+				await sendWebLeadEmail({
+					toEmail: targetEmails,
+					formName: form.title || form.name || "Formulario Web",
+					contactName: name || email || normalizedPhone || "Nuevo contacto",
+					contactEmail: email || undefined,
+					contactPhone: normalizedPhone || undefined,
+					company: company || undefined,
+					dealTitle: generatedDealTitle,
+					customFields: customEntries.map((e) => ({ label: e.label, value: e.value })),
+					contactId: contactId || undefined,
+				})
+			}
+		} catch (emailErr) {
+			console.warn("[forms/submit] No se pudo enviar el correo de notificacion:", emailErr)
 		}
 
 		return NextResponse.json({ success: true }, { headers: corsHeaders })
