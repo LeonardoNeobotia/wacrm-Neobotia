@@ -387,7 +387,7 @@ export async function POST(
 			}
 
 			if (targetEmails.length > 0) {
-				await sendWebLeadEmail({
+				const emailResult = await sendWebLeadEmail({
 					toEmail: targetEmails,
 					formName: form.title || form.name || "Formulario Web",
 					contactName: name || email || normalizedPhone || "Nuevo contacto",
@@ -398,9 +398,12 @@ export async function POST(
 					customFields: customEntries.map((e) => ({ label: e.label, value: e.value })),
 					contactId: contactId || undefined,
 				})
+				if (!emailResult.success) {
+					console.warn("[forms/submit] No se pudo despachar la notificacion por correo interno.")
+				}
 			}
-		} catch (emailErr) {
-			console.warn("[forms/submit] No se pudo enviar el correo de notificacion:", emailErr)
+		} catch {
+			// Silencioso por seguridad: previene fuga de PII y trazabilidad externa
 		}
 
 		return NextResponse.json({ success: true }, { headers: corsHeaders })
