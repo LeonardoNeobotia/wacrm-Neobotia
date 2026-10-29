@@ -149,8 +149,27 @@ export async function POST(request: Request, { params }: RouteParams) {
 			);
 		}
 
-		// Cargar perfiles
-		const profilesToLoad = [ctx.userId, assigned_to].filter(Boolean);
+		// Obtener informacion del chat para contextualizar las notificaciones
+		const { data: chatData } = await adminClient
+			.from("internal_chats")
+			.select("id, name, type, is_group")
+			.eq("id", chatId)
+			.single();
+
+		const isGroup = Boolean(chatData?.is_group || chatData?.type === "group");
+
+		// Obtener todos los miembros del chat excluyendo al creador de la tarea
+		const { data: otherMembers } = await adminClient
+			.from("internal_chat_members")
+			.select("user_id, status")
+			.eq("chat_id", chatId)
+			.neq("user_id", ctx.userId)
+			.in("status", ["accepted", "pending"]);
+
+		const recipientUserIds = (otherMembers || []).map((m: any) => m.user_id);
+
+		// Cargar perfiles de creador, asignado y todos los miembros destinatarios
+		const profilesToLoad = Array.from(new Set([ctx.userId, assigned_to, ...recipientUserIds].filter(Boolean)));
 		const { data: profiles } = await adminClient
 			.from("profiles")
 			.select("user_id, full_name, avatar_url, email")
@@ -158,29 +177,70 @@ export async function POST(request: Request, { params }: RouteParams) {
 
 		const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
 
-		// Enviar notificacion por correo si se asigno a otro usuario
-		if (assigned_to && assigned_to !== ctx.userId) {
-			const assigneeProfile = profileMap.get(assigned_to);
-			const creatorProfile = profileMap.get(ctx.userId);
+		// Mapa de correos con fallback a auth.admin si el perfil no tiene email registrado
+		const emailMap = new Map<string, string>();
+		for (const p of profiles || []) {
+			if (p.email) emailMap.set(p.user_id, p.email);
+		}
 
-			if (assigneeProfile?.email) {
-				const { data: chatData } = await adminClient
-					.from("internal_chats")
-					.select("name")
-					.eq("id", chatId)
-					.single();
+		for (const uid of recipientUserIds) {
+			if (!emailMap.has(uid)) {
+				try {
+					const { data: authUser } = await adminClient.auth.admin.getUserById(uid);
+					if (authUser?.user?.email) {
+						emailMap.set(uid, authUser.user.email);
+					}
+				} catch {
+					// Fallback silencioso
+				}
+			}
+		}
 
-				sendTaskAssignedEmail({
-					toEmail: assigneeProfile.email,
-					assigneeName: assigneeProfile.full_name || undefined,
-					assignedByName: creatorProfile?.full_name || undefined,
-					taskTitle: newTask.title,
-					taskPriority: newTask.priority,
-					dueDate: newTask.due_date,
-					chatName: chatData?.name || undefined,
-				}).catch((err) => {
-					console.warn("[tasks] Error al enviar email de asignacion de tarea:", err);
-				});
+		const creatorProfile = profileMap.get(ctx.userId);
+		const assigneeProfile = assigned_to ? profileMap.get(assigned_to) : null;
+		const chatDisplayName = chatData?.name || (isGroup ? "Grupo de Trabajo" : creatorProfile?.full_name ? `Chat con ${creatorProfile.full_name}` : "Chat Interno");
+
+		// Enviar correo con los detalles de la tarea a todos los destinatarios correspondientes
+		for (const uid of recipientUserIds) {
+			const targetEmail = emailMap.get(uid);
+			if (!targetEmail) continue;
+
+			const recipientProfile = profileMap.get(uid);
+			const isDirectAssignee = assigned_to === uid;
+
+			sendTaskAssignedEmail({
+				toEmail: targetEmail,
+				recipientName: recipientProfile?.full_name || undefined,
+				assignedByName: creatorProfile?.full_name || "Un compañero de equipo",
+				assigneeName: assigneeProfile?.full_name || (isGroup ? "Todo el grupo" : undefined),
+				isDirectAssignee,
+				taskTitle: newTask.title,
+				taskDescription: newTask.description || undefined,
+				taskPriority: newTask.priority,
+				dueDate: newTask.due_date,
+				chatName: chatDisplayName,
+				chatId,
+				isGroup,
+			}).catch((err) => {
+				console.warn("[tasks] Error al enviar email de tarea a:", targetEmail, err);
+			});
+		}
+
+		// Insertar notificaciones dentro de la aplicacion para los miembros
+		if (recipientUserIds.length > 0 && ctx.accountId) {
+			try {
+				const notificationsToInsert = recipientUserIds.map((uid) => ({
+					account_id: ctx.accountId,
+					user_id: uid,
+					type: "internal_chat_task",
+					chat_id: chatId,
+					actor_user_id: ctx.userId,
+					title: isGroup ? `Nueva tarea en grupo: ${newTask.title}` : `Nueva tarea: ${newTask.title}`,
+					body: `${creatorProfile?.full_name || "Un compañero"} creó la tarea: "${newTask.title}".`,
+				}));
+				await adminClient.from("notifications").insert(notificationsToInsert);
+			} catch {
+				// Falla silenciosa si las notificaciones internas fallan
 			}
 		}
 

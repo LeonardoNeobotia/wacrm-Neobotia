@@ -36,6 +36,8 @@ function LoginPageInner() {
   // account. After a successful sign-in we send them to the join
   // page to accept rather than to /dashboard.
   const inviteToken = searchParams.get("invite");
+  const isResetSuccess = searchParams.get("reset") === "success";
+  const urlError = searchParams.get("error");
   const t = useTranslations("LoginPage");
 
   const [email, setEmail] = useState("");
@@ -103,9 +105,15 @@ function LoginPageInner() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            {error && (
+            {isResetSuccess && !error && !urlError && (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400">
+                Tu contraseña ha sido actualizada con éxito. Inicia sesión con tu nueva contraseña.
+              </div>
+            )}
+
+            {(error || urlError) && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
+                {error || urlError}
               </div>
             )}
 

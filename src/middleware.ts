@@ -53,6 +53,15 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname === '/signup' ||
     request.nextUrl.pathname === '/forgot-password'
   )) {
+    // Si el usuario acaba de resetear su clave y llega a /login?reset=success,
+    // permitimos que visualice el formulario de inicio de sesión sin rebotar a /dashboard
+    if (
+      request.nextUrl.pathname === '/login' &&
+      request.nextUrl.searchParams.get('reset') === 'success'
+    ) {
+      return supabaseResponse
+    }
+
     const url = request.nextUrl.clone()
     const inviteToken = request.nextUrl.searchParams.get('invite')
     if (

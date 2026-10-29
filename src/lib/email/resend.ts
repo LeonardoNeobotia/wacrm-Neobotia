@@ -602,35 +602,70 @@ export async function sendInternalChatInviteEmail({
 }
 
 /**
- * Notificacion cuando se asigna una tarea a un colaborador en el chat interno.
- * Sanitiza titulo de tarea, prioridad y nombres.
+ * Notificacion cuando se crea o asigna una tarea en el chat interno.
+ * Sanitiza titulo de tarea, descripcion, prioridad y nombres.
  */
 export async function sendTaskAssignedEmail({
 	toEmail,
+	recipientName,
 	assigneeName,
 	assignedByName,
+	isDirectAssignee,
 	taskTitle,
+	taskDescription,
 	taskPriority,
 	dueDate,
 	chatName,
+	chatId,
+	isGroup,
 }: {
 	toEmail: string | string[];
+	recipientName?: string;
 	assigneeName?: string;
 	assignedByName?: string;
+	isDirectAssignee?: boolean;
 	taskTitle: string;
+	taskDescription?: string | null;
 	taskPriority?: 'low' | 'medium' | 'high' | 'urgent';
 	dueDate?: string | null;
 	chatName?: string;
+	chatId?: string;
+	isGroup?: boolean;
 }): Promise<SendEmailResult> {
+	const safeRecipient = recipientName ? escapeHtml(recipientName) : undefined;
 	const safeAssignee = assigneeName ? escapeHtml(assigneeName) : undefined;
 	const safeAssignedBy = assignedByName ? escapeHtml(assignedByName) : undefined;
 	const safeTitle = escapeHtml(taskTitle);
+	const safeDescription = taskDescription ? escapeHtml(taskDescription) : undefined;
 	const safeChat = chatName ? escapeHtml(chatName) : undefined;
-	const safeDueDate = dueDate ? escapeHtml(dueDate) : undefined;
 
-	const greeting = safeAssignee ? `Hola ${safeAssignee},` : 'Hola,';
-	const title = 'Nueva tarea asignada';
-	const assigner = safeAssignedBy ? `${safeAssignedBy} te ha asignado` : 'Se te ha asignado';
+	let safeDueDate: string | undefined = undefined;
+	if (dueDate) {
+		try {
+			const d = new Date(dueDate.includes('T') ? dueDate : `${dueDate}T12:00:00`);
+			if (!isNaN(d.getTime())) {
+				safeDueDate = d.toLocaleDateString('es-CL', {
+					year: 'numeric',
+					month: 'long',
+					day: 'numeric',
+				});
+			} else {
+				safeDueDate = escapeHtml(dueDate);
+			}
+		} catch {
+			safeDueDate = escapeHtml(dueDate);
+		}
+	}
+
+	const greeting = safeRecipient ? `Hola ${safeRecipient},` : 'Hola,';
+	const title = isDirectAssignee ? 'Nueva tarea asignada' : 'Nueva tarea en equipo';
+	const subtitle = isGroup
+		? `Grupo: ${safeChat || 'Equipo'}`
+		: (safeChat ? `Chat: ${safeChat}` : 'Chat Interno');
+
+	const introText = isDirectAssignee
+		? `${safeAssignedBy || 'Un compañero'} te ha asignado una nueva tarea en el chat interno:`
+		: `${safeAssignedBy || 'Un compañero'} ha creado una nueva tarea en ${safeChat ? `<strong>${safeChat}</strong>` : 'el chat interno'}:`;
 
 	const priorityLabels: Record<string, string> = {
 		low: 'Baja',
@@ -639,47 +674,67 @@ export async function sendTaskAssignedEmail({
 		urgent: 'Urgente',
 	};
 	const priorityLabel = taskPriority ? (priorityLabels[taskPriority] || taskPriority) : 'Media';
+	const priorityColor = taskPriority === 'urgent' ? '#ef4444' : taskPriority === 'high' ? '#f59e0b' : taskPriority === 'low' ? '#64748b' : '#0284c7';
 
 	const bodyHtml = `
 		<p>${greeting}</p>
-		<p>${assigner} una nueva tarea en el chat interno del CRM:</p>
+		<p>${introText}</p>
 		<div class="info-box">
 			<table class="info-table">
 				<tr>
 					<td class="info-label">Tarea:</td>
-					<td class="info-value" style="font-weight: 700; color: #0f172a;">${safeTitle}</td>
+					<td class="info-value" style="font-weight: 700; color: #0f172a; font-size: 15px;">${safeTitle}</td>
 				</tr>
+				${safeDescription ? `
+				<tr>
+					<td class="info-label">Detalles:</td>
+					<td class="info-value" style="color: #334155; line-height: 22px; white-space: pre-wrap;">${safeDescription}</td>
+				</tr>
+				` : ''}
 				<tr>
 					<td class="info-label">Prioridad:</td>
-					<td class="info-value"><span style="color: ${taskPriority === 'urgent' ? '#ef4444' : taskPriority === 'high' ? '#f59e0b' : '#0284c7'}; font-weight: 600;">${priorityLabel}</span></td>
+					<td class="info-value"><span style="color: ${priorityColor}; font-weight: 700;">${priorityLabel}</span></td>
+				</tr>
+				<tr>
+					<td class="info-label">Asignada a:</td>
+					<td class="info-value" style="font-weight: 600; color: #0284c7;">${safeAssignee || (isGroup ? 'Todo el grupo' : 'Chat compartido')}</td>
+				</tr>
+				<tr>
+					<td class="info-label">Creada por:</td>
+					<td class="info-value">${safeAssignedBy || 'Colaborador'}</td>
 				</tr>
 				${safeChat ? `
 				<tr>
-					<td class="info-label">Canal / Chat:</td>
+					<td class="info-label">Chat / Grupo:</td>
 					<td class="info-value">${safeChat}</td>
 				</tr>
 				` : ''}
 				${safeDueDate ? `
 				<tr>
 					<td class="info-label">Fecha limite:</td>
-					<td class="info-value">${safeDueDate}</td>
+					<td class="info-value" style="font-weight: 600; color: #0f172a;">${safeDueDate}</td>
 				</tr>
 				` : ''}
 			</table>
 		</div>
-		<p>Puedes revisar el estado y marcar como completada la tarea en la seccion de chat interno.</p>
+		<p>Puedes acceder a la tarea para revisar sus avances o marcarla como completada desde el chat interno.</p>
 	`;
+
+	const actionUrl = chatId ? `/internal-chat?c=${encodeURIComponent(chatId)}` : '/internal-chat';
+	const subject = isDirectAssignee
+		? `Nueva tarea asignada: ${safeTitle}`
+		: `Nueva tarea en ${safeChat || 'chat interno'}: ${safeTitle}`;
 
 	return sendEmail({
 		to: toEmail,
-		subject: `Nueva tarea asignada: ${safeTitle}`,
+		subject,
 		html: renderBaseEmailTemplate({
 			title,
-			subtitle: 'Asignacion de tareas en equipo',
+			subtitle,
 			bodyHtml,
-			actionUrl: '/internal-chat',
-			actionText: 'Ver tareas en Chat Interno',
-			footerHint: 'Notificacion de tareas del equipo.',
+			actionUrl,
+			actionText: 'Ver tarea en Chat Interno',
+			footerHint: 'Notificacion unificada de tareas del equipo.',
 		}),
 		tags: [{ name: 'type', value: 'task-assigned' }],
 	});
