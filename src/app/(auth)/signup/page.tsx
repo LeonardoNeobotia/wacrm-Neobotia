@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { getAuthErrorMessage } from "@/lib/auth/error-messages";
+import { validatePasswordStrength } from "@/lib/auth/password-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,8 +57,13 @@ function SignupPageInner() {
       return;
     }
 
-    if (password.length < 6) {
-      setError(t("errPasswordShort"));
+    const passwordValidation = validatePasswordStrength(password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.error);
+
+
+
+
       return;
     }
 
@@ -82,7 +89,7 @@ function SignupPageInner() {
     });
 
     if (error) {
-      setError(error.message);
+      setError(getAuthErrorMessage(error));
       setLoading(false);
       return;
     }
@@ -198,6 +205,7 @@ function SignupPageInner() {
               </Label>
               <Input
                 id="password"
+                minLength={8}
                 type="password"
                 placeholder={t("passwordPlaceholder")}
                 value={password}
@@ -213,6 +221,7 @@ function SignupPageInner() {
               </Label>
               <Input
                 id="confirmPassword"
+                minLength={8}
                 type="password"
                 placeholder={t("confirmPasswordPlaceholder")}
                 value={confirmPassword}

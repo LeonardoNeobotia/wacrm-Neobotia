@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { getAuthErrorMessage } from "@/lib/auth/error-messages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,7 +58,7 @@ function LoginPageInner() {
     });
 
     if (error) {
-      setError(error.message);
+      setError(getAuthErrorMessage(error));
       setLoading(false);
       return;
     }

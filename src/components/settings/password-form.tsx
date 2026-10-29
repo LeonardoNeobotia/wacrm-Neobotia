@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { Loader2, KeyRound } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
+import { getAuthErrorMessage } from '@/lib/auth/error-messages';
+import { validatePasswordStrength } from '@/lib/auth/password-validation';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,8 +39,13 @@ export function PasswordForm() {
       toast.error(t('cannotChangeNoEmail'));
       return;
     }
-    if (next.length < MIN_PASSWORD) {
-      setConfirmError(t('passwordTooShort', { min: MIN_PASSWORD }));
+    const strength = validatePasswordStrength(next);
+    if (!strength.isValid) {
+      setConfirmError(strength.error);
+
+
+
+
       return;
     }
     if (next !== confirm) {
@@ -66,7 +73,7 @@ export function PasswordForm() {
         password: next,
       });
       if (updateError) {
-        toast.error(t('passwordUpdateFailed', { message: updateError.message }));
+        toast.error(getAuthErrorMessage(updateError));
         return;
       }
 

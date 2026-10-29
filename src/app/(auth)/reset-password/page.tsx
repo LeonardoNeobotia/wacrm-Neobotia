@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getAuthErrorMessage } from "@/lib/auth/error-messages";
+import { validatePasswordStrength } from "@/lib/auth/password-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,8 +39,9 @@ export default function ResetPasswordPage() {
 		e.preventDefault();
 		setError(null);
 
-		if (password.length < 6) {
-			setError("La contraseña debe tener al menos 6 caracteres");
+		const passwordValidation = validatePasswordStrength(password);
+		if (!passwordValidation.isValid) {
+			setError(passwordValidation.error);
 			return;
 		}
 
@@ -54,7 +57,7 @@ export default function ResetPasswordPage() {
 		});
 
 		if (updateError) {
-			setError(updateError.message);
+			setError(getAuthErrorMessage(updateError));
 			setLoading(false);
 			return;
 		}
@@ -185,9 +188,12 @@ export default function ResetPasswordPage() {
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								required
-								minLength={6}
+								minLength={8}
 								className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
 							/>
+							<p className="text-xs text-muted-foreground">
+								Mínimo 8 caracteres, con mayúsculas, minúsculas y números.
+							</p>
 						</div>
 
 						<div className="flex flex-col gap-2">
@@ -201,7 +207,7 @@ export default function ResetPasswordPage() {
 								value={confirmPassword}
 								onChange={(e) => setConfirmPassword(e.target.value)}
 								required
-								minLength={6}
+								minLength={8}
 								className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
 							/>
 						</div>
