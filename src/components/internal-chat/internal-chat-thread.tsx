@@ -51,7 +51,7 @@ import type { InternalChat, InternalMessage, InternalMessageType } from "@/types
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import {
-	playNotificationSound,
+	playInternalChatSound,
 	isSoundMuted,
 	setSoundMuted,
 } from "@/lib/sound/notification";
@@ -194,14 +194,6 @@ export function InternalChatThread({
 				const data = await res.json();
 				const freshMsgs: InternalMessage[] = data.messages || [];
 				setMessages((prev) => {
-					// Comprobar si llegaron mensajes nuevos de otros usuarios para reproducir sonido
-					const hasNewFromOthers = freshMsgs.some(
-						(fm) => fm.sender_id !== user?.id && !prev.some((pm) => pm.id === fm.id)
-					);
-					if (hasNewFromOthers) {
-						playNotificationSound();
-					}
-
 					// Identificar mensajes temporales que siguen en proceso de envio
 					const tempMsgs = prev.filter(
 						(m) => m.id.startsWith("temp-") || m.status === "sending"
@@ -370,9 +362,8 @@ export function InternalChatThread({
 				return [...prev, { ...newMsg, status: "sent" }];
 			});
 
-			// Si el mensaje es de otro usuario y tenemos el chat abierto, reproducir sonido y marcar como leido
+			// Si el mensaje es de otro usuario y tenemos el chat abierto, marcar como leido en la BD
 			if (newMsg.sender_id !== user?.id) {
-				playNotificationSound();
 				fetch(`/api/internal-chat/${chat.id}/read`, { method: "POST" });
 			}
 
@@ -1097,7 +1088,7 @@ export function InternalChatThread({
 								setMuted(next);
 								setSoundMuted(next);
 								if (!next) {
-									playNotificationSound();
+									playInternalChatSound();
 									toast.success("Sonido de notificaciones activado");
 								} else {
 									toast.info("Sonido de notificaciones silenciado");

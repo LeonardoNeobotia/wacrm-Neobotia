@@ -96,16 +96,27 @@ export async function POST(request: Request, { params }: RouteParams) {
 
 		await adminClient.from("notifications").insert(notifications);
 
-		// Enviar notificaciones por correo a los miembros agregados
+		// Enviar notificaciones por correo a los miembros agregados respetando preferencias
 		try {
-			const { data: addedProfiles } = await adminClient
+			let addedProfiles: any[] | null = null;
+			const queryWithPrefs = await adminClient
 				.from("profiles")
-				.select("email, full_name")
+				.select("email, full_name, notification_preferences")
 				.in("user_id", toAdd);
+
+			if (queryWithPrefs.error) {
+				const fallbackQuery = await adminClient
+					.from("profiles")
+					.select("email, full_name")
+					.in("user_id", toAdd);
+				addedProfiles = fallbackQuery.data;
+			} else {
+				addedProfiles = queryWithPrefs.data;
+			}
 
 			if (addedProfiles && addedProfiles.length > 0) {
 				for (const prof of addedProfiles) {
-					if (prof.email) {
+					if (prof.email && prof.notification_preferences?.email_chat_invite !== false) {
 						sendInternalChatInviteEmail({
 							toEmail: prof.email,
 							recipientName: prof.full_name || undefined,

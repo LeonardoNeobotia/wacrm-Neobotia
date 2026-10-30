@@ -170,10 +170,21 @@ export async function POST(request: Request, { params }: RouteParams) {
 
 		// Cargar perfiles de creador, asignado y todos los miembros destinatarios
 		const profilesToLoad = Array.from(new Set([ctx.userId, assigned_to, ...recipientUserIds].filter(Boolean)));
-		const { data: profiles } = await adminClient
+		let profiles: any[] | null = null;
+		const queryWithPrefs = await adminClient
 			.from("profiles")
-			.select("user_id, full_name, avatar_url, email")
+			.select("user_id, full_name, avatar_url, email, notification_preferences")
 			.in("user_id", profilesToLoad);
+
+		if (queryWithPrefs.error) {
+			const fallbackQuery = await adminClient
+				.from("profiles")
+				.select("user_id, full_name, avatar_url, email")
+				.in("user_id", profilesToLoad);
+			profiles = fallbackQuery.data;
+		} else {
+			profiles = queryWithPrefs.data;
+		}
 
 		const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
 
@@ -206,6 +217,9 @@ export async function POST(request: Request, { params }: RouteParams) {
 			if (!targetEmail) continue;
 
 			const recipientProfile = profileMap.get(uid);
+			if (recipientProfile?.notification_preferences?.email_task_assigned === false) {
+				continue;
+			}
 			const isDirectAssignee = assigned_to === uid;
 
 			sendTaskAssignedEmail({

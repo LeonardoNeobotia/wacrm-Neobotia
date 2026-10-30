@@ -362,26 +362,39 @@ export async function POST(
 
 		// 9. Enviar correo consolidado con lead y negociacion a los miembros del equipo
 		try {
-			// Obtener correos de los miembros del espacio de trabajo
-			const { data: memberProfiles } = await supabase
+			// Obtener correos de los miembros del espacio de trabajo respetando preferencias
+			let memberProfiles: any[] | null = null
+			const queryWithPrefs = await supabase
 				.from("profiles")
-				.select("email")
+				.select("email, notification_preferences")
 				.eq("account_id", account_id)
 				.not("email", "is", null)
 
+			if (queryWithPrefs.error) {
+				const fallbackQuery = await supabase
+					.from("profiles")
+					.select("email")
+					.eq("account_id", account_id)
+					.not("email", "is", null)
+				memberProfiles = fallbackQuery.data
+			} else {
+				memberProfiles = queryWithPrefs.data
+			}
+
 			const memberEmails = (memberProfiles || [])
+				.filter((p: any) => p.notification_preferences?.email_web_lead !== false)
 				.map((p: any) => p.email)
 				.filter((e: any): e is string => Boolean(e) && e.includes("@"))
 
-			// Fallback al owner_user_id si no hay miembros vinculados por account_id
+			// Fallback al owner_user_id solo si no hay miembros vinculados por account_id
 			let targetEmails = memberEmails
-			if (targetEmails.length === 0) {
+			if (targetEmails.length === 0 && (!memberProfiles || memberProfiles.length === 0)) {
 				const { data: ownerProfile } = await supabase
 					.from("profiles")
-					.select("email")
+					.select("email, notification_preferences")
 					.eq("user_id", ownerUserId)
 					.single()
-				if (ownerProfile?.email) {
+				if (ownerProfile?.email && ownerProfile.notification_preferences?.email_web_lead !== false) {
 					targetEmails = [ownerProfile.email]
 				}
 			}

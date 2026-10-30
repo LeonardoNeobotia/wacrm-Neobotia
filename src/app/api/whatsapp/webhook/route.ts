@@ -783,26 +783,39 @@ async function processMessage(
         .eq('contact_id', contactRecord.id)
 
       if (!formSubCount || formSubCount === 0) {
-        // Obtener miembros del espacio de trabajo
-        const { data: memberProfiles } = await supabaseAdmin()
+        // Obtener miembros del espacio de trabajo y respetar preferencias de notificación
+        let memberProfiles: any[] | null = null
+        const queryWithPrefs = await supabaseAdmin()
           .from('profiles')
-          .select('email')
+          .select('email, notification_preferences')
           .eq('account_id', accountId)
           .not('email', 'is', null)
 
+        if (queryWithPrefs.error) {
+          const fallbackQuery = await supabaseAdmin()
+            .from('profiles')
+            .select('email')
+            .eq('account_id', accountId)
+            .not('email', 'is', null)
+          memberProfiles = fallbackQuery.data
+        } else {
+          memberProfiles = queryWithPrefs.data
+        }
+
         const memberEmails = (memberProfiles || [])
+          .filter((p: any) => p.notification_preferences?.email_new_contact !== false)
           .map((p: any) => p.email)
           .filter((e: any): e is string => Boolean(e) && e.includes('@'))
 
-        // Fallback al configOwnerUserId si no hay miembros vinculados
+        // Fallback al configOwnerUserId solo si no hay miembros vinculados en la cuenta
         let targetEmails = memberEmails
-        if (targetEmails.length === 0) {
+        if (targetEmails.length === 0 && (!memberProfiles || memberProfiles.length === 0)) {
           const { data: ownerProfile } = await supabaseAdmin()
             .from('profiles')
-            .select('email')
+            .select('email, notification_preferences')
             .eq('user_id', configOwnerUserId)
             .single()
-          if (ownerProfile?.email) {
+          if (ownerProfile?.email && ownerProfile.notification_preferences?.email_new_contact !== false) {
             targetEmails = [ownerProfile.email]
           }
         }

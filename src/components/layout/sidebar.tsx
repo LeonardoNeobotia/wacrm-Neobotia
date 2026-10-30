@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import { useInternalChatUnread } from "@/hooks/use-internal-chat-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   Bell,
@@ -124,6 +125,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
+  const totalInternalChatUnread = useInternalChatUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
@@ -228,6 +230,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               const showUnreadDot =
                 item.href === "/inbox" && totalUnread > 0 && !isActive;
 
+              const showInternalChatDot =
+                item.href === "/internal-chat" && totalInternalChatUnread > 0 && !isActive;
+
               // Unlike the inbox dot, the notifications count stays visible
               // even while the page is active — it reflects unread state
               // (cleared by marking notifications read), not "currently
@@ -264,6 +269,15 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                       >
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                      </span>
+                    )}
+                    {showInternalChatDot && (
+                      <span
+                        aria-label={t("unreadInternalChats", { count: totalInternalChatUnread })}
+                        className="relative flex h-2 w-2"
+                      >
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                       </span>
                     )}
                     {showNotificationBadge && (

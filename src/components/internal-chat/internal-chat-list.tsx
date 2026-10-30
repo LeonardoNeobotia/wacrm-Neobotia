@@ -315,7 +315,7 @@ export function InternalChatList({
 											</p>
 
 											{/* Badge de no leídos */}
-											{chat.unread_count && chat.unread_count > 0 && !isPending ? (
+											{chat.unread_count && chat.unread_count > 0 && !isPending && activeChatId !== chat.id ? (
 												<span className="h-4 min-w-4 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0 ml-1">
 													{chat.unread_count}
 												</span>

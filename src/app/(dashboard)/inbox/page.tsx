@@ -47,6 +47,18 @@ function InboxPageInner() {
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
+
+	// Exponer el ID de la conversación activa en window para verificación síncrona de foco y sonido
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			(window as any).__wacrm_active_inbox_conversation_id = activeConversation?.id ?? null;
+		}
+		return () => {
+			if (typeof window !== "undefined") {
+				(window as any).__wacrm_active_inbox_conversation_id = null;
+			}
+		};
+	}, [activeConversation?.id]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null

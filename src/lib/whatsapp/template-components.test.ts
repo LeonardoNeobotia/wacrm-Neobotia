@@ -108,19 +108,52 @@ describe('buildMetaTemplatePayload', () => {
     ]);
   });
 
-  it('orders components HEADER → BODY → FOOTER → BUTTONS', () => {
-    const payload = buildMetaTemplatePayload({
-      ...base,
-      header_type: 'text',
-      header_content: 'Hi',
-      footer_text: 'Footer',
-      buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }],
-    });
-    expect(payload.components.map((c) => c.type)).toEqual([
-      'HEADER',
-      'BODY',
-      'FOOTER',
-      'BUTTONS',
-    ]);
-  });
+	it('orders components HEADER → BODY → FOOTER → BUTTONS', () => {
+		const payload = buildMetaTemplatePayload({
+			...base,
+			header_type: 'text',
+			header_content: 'Hi',
+			footer_text: 'Footer',
+			buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }],
+		});
+		expect(payload.components.map((c) => c.type)).toEqual([
+			'HEADER',
+			'BODY',
+			'FOOTER',
+			'BUTTONS',
+		]);
+	});
+
+	it('emits parameter_format NAMED and body_text_named_params when named variables are used', () => {
+		const payload = buildMetaTemplatePayload({
+			...base,
+			parameter_format: 'NAMED',
+			body_text: 'Hola {{nombre}}, tu paquete {{codigo_envio}} está en camino.',
+			sample_values: { body: ['Carlos', 'ENV-999'] },
+		});
+
+		expect(payload.parameter_format).toBe('NAMED');
+		const body = payload.components.find((c) => c.type === 'BODY');
+		expect(body?.example?.body_text_named_params).toEqual([
+			{ param_name: 'nombre', example: 'Carlos' },
+			{ param_name: 'codigo_envio', example: 'ENV-999' },
+		]);
+	});
+
+	it('emits header_text_named_params for named variables in text header', () => {
+		const payload = buildMetaTemplatePayload({
+			...base,
+			parameter_format: 'NAMED',
+			header_type: 'text',
+			header_content: 'Aviso para {{cliente}}',
+			body_text: 'Tu saldo vence pronto.',
+			sample_values: { header: ['Juan Pérez'] },
+		});
+
+		expect(payload.parameter_format).toBe('NAMED');
+		const header = payload.components.find((c) => c.type === 'HEADER');
+		expect(header?.example?.header_text_named_params).toEqual([
+			{ param_name: 'cliente', example: 'Juan Pérez' },
+		]);
+	});
 });

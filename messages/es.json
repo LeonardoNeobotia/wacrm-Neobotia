@@ -65,6 +65,7 @@
     "settings": "Configuración",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversación no leída} other {conversaciones no leídas}}",
+    "unreadInternalChats": "{count} {count, plural, =1 {chat interno no leído} other {chats internos no leídos}}",
     "unreadNotifications": "{count} {count, plural, =1 {notificación no leída} other {notificaciones no leídas}}",
     "roleOwner": "Propietario",
     "roleAdmin": "Administrador",
@@ -1724,6 +1725,7 @@
       "overview": "Resumen",
       "profile": "Tu perfil",
       "security": "Inicio de sesión y seguridad",
+      "notifications": "Notificaciones",
       "appearance": "Apariencia",
       "whatsapp": "WhatsApp",
       "templates": "Plantillas",
@@ -1822,6 +1824,26 @@
     "security": {
       "title": "Inicio de sesión y seguridad",
       "description": "Cambia tu contraseña y cierra sesión en tus dispositivos."
+    },
+    "notifications": {
+      "title": "Notificaciones",
+      "description": "Elige qué correos electrónicos deseas recibir de Neowapp CRM.",
+      "emailSectionTitle": "Notificaciones por correo electrónico",
+      "emailSectionDesc": "Controla los avisos automáticos que se envían a tu bandeja de correo registrada.",
+      "chatInviteTitle": "Invitaciones a chats internos",
+      "chatInviteDesc": "Recibe un correo cuando un compañero te invite a un chat directo o grupo de trabajo.",
+      "newContactTitle": "Nuevo contacto en bandeja de entrada",
+      "newContactDesc": "Recibe un aviso por correo cuando un nuevo contacto no registrado escriba por primera vez a WhatsApp.",
+      "webLeadTitle": "Formularios web (Nuevo negocio y contacto)",
+      "webLeadDesc": "Recibe una alerta cuando un cliente potencial complete un formulario web y se registre como contacto y negocio.",
+      "securitySectionTitle": "Seguridad y cuenta",
+      "securitySectionDesc": "Notificaciones obligatorias para el funcionamiento y resguardo del acceso.",
+      "authEmailsTitle": "Restablecimiento de contraseña y verificación",
+      "authEmailsDesc": "Correos transaccionales esenciales para recuperar tu contraseña o confirmar tu identidad. No pueden ser desactivados por motivos de seguridad.",
+      "mandatoryBadge": "Obligatorio",
+      "saveSuccess": "Preferencia actualizada",
+      "saveError": "Error al actualizar la preferencia",
+      "loadError": "Error al cargar las preferencias de notificación"
     },
     "apiKeys": {
       "title": "Claves API",

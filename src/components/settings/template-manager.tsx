@@ -49,6 +49,7 @@ import type {
 } from '@/types';
 import { templateStatusConfig } from '@/lib/template-status';
 import {
+  extractTemplateVariables,
   extractVariableIndices,
   TEMPLATE_LIMITS,
 } from '@/lib/whatsapp/template-validators';
@@ -107,13 +108,13 @@ const COMMON_LANGUAGE_CODES = [
 function emptyButton(type: TemplateButton['type']): TemplateButton {
   switch (type) {
     case 'QUICK_REPLY':
-      return { type: 'QUICK_REPLY', text: '' };
+  		return { type: 'QUICK_REPLY', text: '' };
     case 'URL':
-      return { type: 'URL', text: '', url: '' };
+  		return { type: 'URL', text: '', url: '' };
     case 'PHONE_NUMBER':
-      return { type: 'PHONE_NUMBER', text: '', phone_number: '' };
+  		return { type: 'PHONE_NUMBER', text: '', phone_number: '' };
     case 'COPY_CODE':
-      return { type: 'COPY_CODE', text: '', example: '' };
+  		return { type: 'COPY_CODE', text: '', example: '' };
   }
 }
 
@@ -166,7 +167,7 @@ export function TemplateManager() {
   const headerVarCount = useMemo(
     () =>
       form.header_format === 'text'
-        ? extractVariableIndices(form.header_content).length
+        ? extractTemplateVariables(form.header_content).variables.length
         : 0,
     [form.header_format, form.header_content],
   );
@@ -178,7 +179,7 @@ export function TemplateManager() {
       if (prev.body_samples.length === bodyVarCount) return prev;
       const next = prev.body_samples.slice(0, bodyVarCount);
       while (next.length < bodyVarCount) next.push('');
-      return { ...prev, body_samples: next };
+  		return { ...prev, body_samples: next };
     });
   }, [bodyVarCount]);
 
@@ -211,66 +212,69 @@ export function TemplateManager() {
 		}
 	}
 
-  function buildSubmitPayload() {
-    const sample_values: TemplateSampleValues = {};
-    if (form.body_samples.some((v) => v.trim())) {
-      sample_values.body = form.body_samples.map((v) => v.trim());
-    }
-    if (form.header_format === 'text' && form.header_sample.trim()) {
-      sample_values.header = [form.header_sample.trim()];
-    }
+	function buildSubmitPayload() {
+		const sample_values: TemplateSampleValues = {};
+		if (form.body_samples.some((v) => v.trim())) {
+			sample_values.body = form.body_samples.map((v) => v.trim());
+		}
+		if (form.header_format === 'text' && form.header_sample.trim()) {
+			sample_values.header = [form.header_sample.trim()];
+		}
 
-    let finalBodyText = form.body_text.trim();
-    if (form.variable_format === 'named' && extractedBodyVars.length > 0) {
-      sample_values.named_vars = extractedBodyVars;
-      extractedBodyVars.forEach((varName, index) => {
-        // match exactly {{ varName }} ignoring spaces
-        const regex = new RegExp(`\\{\\{\\s*${varName}\\s*\\}\\}`, 'g');
-        finalBodyText = finalBodyText.replace(regex, `{{${index + 1}}}`);
-      });
-    }
+		const finalBodyText = form.body_text.trim();
+		if (form.variable_format === 'named' && extractedBodyVars.length > 0) {
+			sample_values.named_vars = extractedBodyVars;
+		}
 
-    return {
-      name: form.name.trim(),
-      category: form.category,
-      language: form.language.trim() || 'en_US',
-      header_type: form.header_format === 'none' ? undefined : form.header_format,
-      header_content:
-        form.header_format === 'text' ? form.header_content.trim() : undefined,
-      header_media_url:
-        form.header_format !== 'none' && form.header_format !== 'text'
-          ? form.header_media_url.trim() || undefined
-          : undefined,
-      body_text: finalBodyText,
-      footer_text: form.footer_text.trim() || undefined,
-      buttons: form.buttons.length > 0 ? form.buttons : undefined,
-      sample_values:
-        Object.keys(sample_values).length > 0 ? sample_values : undefined,
-    };
-  }
+		return {
+			name: form.name.trim(),
+			category: form.category,
+			language: form.language.trim() || 'en_US',
+			parameter_format:
+				form.variable_format === 'named'
+					? ('NAMED' as const)
+					: ('POSITIONAL' as const),
+			header_type: form.header_format === 'none' ? undefined : form.header_format,
+			header_content:
+				form.header_format === 'text' ? form.header_content.trim() : undefined,
+			header_media_url:
+				form.header_format !== 'none' && form.header_format !== 'text'
+					? form.header_media_url.trim() || undefined
+					: undefined,
+			body_text: finalBodyText,
+			footer_text: form.footer_text.trim() || undefined,
+			buttons: form.buttons.length > 0 ? form.buttons : undefined,
+			sample_values:
+				Object.keys(sample_values).length > 0 ? sample_values : undefined,
+		};
+	}
 
-  function openEdit(template: MessageTemplate) {
-    setEditingId(template.id);
-    let bodyText = template.body_text;
-    let varFormat: 'positional' | 'named' = 'positional';
-    
-    if (template.sample_values?.named_vars && template.sample_values.named_vars.length > 0) {
-      varFormat = 'named';
-      template.sample_values.named_vars.forEach((name, i) => {
-         bodyText = bodyText.replace(new RegExp(`\\{\\{${i+1}\\}\\}`, 'g'), `{{${name}}}`);
-      });
-    }
+	function openEdit(template: MessageTemplate) {
+		setEditingId(template.id);
+		let bodyText = template.body_text;
+		let varFormat: 'positional' | 'named' = 'positional';
 
-    setForm({
-      name: template.name,
-      category: template.category,
-      language: template.language || 'en_US',
-      variable_format: varFormat,
-      header_format: (template.header_type ?? 'none') as HeaderFormat,
-      header_content: template.header_content ?? '',
-      header_media_url: template.header_media_url ?? '',
-      header_sample: template.sample_values?.header?.[0] ?? '',
-      body_text: bodyText,
+		const varInfo = extractTemplateVariables(template.body_text);
+		if (varInfo.isNamed || (template.sample_values?.named_vars && template.sample_values.named_vars.length > 0)) {
+			varFormat = 'named';
+			// Si el texto de la plantilla usa indices {{1}} pero teníamos named_vars guardadas, restauramos los nombres
+			if (!varInfo.isNamed && template.sample_values?.named_vars) {
+				template.sample_values.named_vars.forEach((name, i) => {
+					bodyText = bodyText.replace(new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g'), `{{${name}}}`);
+				});
+			}
+		}
+
+		setForm({
+			name: template.name,
+			category: template.category,
+			language: template.language || 'en_US',
+			variable_format: varFormat,
+			header_format: (template.header_type ?? 'none') as HeaderFormat,
+			header_content: template.header_content ?? '',
+			header_media_url: template.header_media_url ?? '',
+			header_sample: template.sample_values?.header?.[0] ?? '',
+			body_text: bodyText,
       body_samples: template.sample_values?.body ?? [],
       footer_text: template.footer_text ?? '',
       buttons: template.buttons ?? [],
@@ -297,8 +301,9 @@ export function TemplateManager() {
       const res = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildSubmitPayload()),
-      });
+				body: JSON.stringify(buildSubmitPayload()),
+			});
+
       const data = await res.json();
       if (!res.ok) {
         throw new Error(
@@ -378,10 +383,11 @@ export function TemplateManager() {
       // Route handler scopes the Meta delete via hsm_id (so sibling
       // language variants survive) and falls through to remove the
       // local row. Local-only rows skip the Meta call.
-      const res = await fetch(`/api/whatsapp/templates/${target.id}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json().catch(() => ({}));
+			const res = await fetch(`/api/whatsapp/templates/${target.id}`, {
+				method: 'DELETE',
+			});
+
+			const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || `Delete failed (HTTP ${res.status})`);
       }
@@ -447,7 +453,7 @@ export function TemplateManager() {
           };
           break;
       }
-      return { ...prev, buttons: next };
+  		return { ...prev, buttons: next };
     });
   }
 
@@ -455,7 +461,7 @@ export function TemplateManager() {
     setForm((prev) => {
       const next = [...prev.buttons];
       next[index] = emptyButton(type);
-      return { ...prev, buttons: next };
+  		return { ...prev, buttons: next };
     });
   }
 

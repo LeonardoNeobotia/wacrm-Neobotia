@@ -10,6 +10,13 @@ export type {
   InteractiveListSection,
 } from "@/lib/whatsapp/interactive";
 
+export interface NotificationPreferences {
+	email_chat_invite: boolean;
+	email_new_contact: boolean;
+	email_web_lead: boolean;
+	email_task_assigned?: boolean;
+}
+
 export interface Profile {
   id: string;
   user_id: string;
@@ -45,6 +52,7 @@ export interface Profile {
    * `@/lib/auth/roles` rather than comparing this string directly.
    */
   account_role?: AccountRole;
+	notification_preferences?: NotificationPreferences;
   created_at: string;
 }
 

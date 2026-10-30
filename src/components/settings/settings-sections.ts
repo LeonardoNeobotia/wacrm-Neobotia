@@ -1,4 +1,5 @@
 import {
+  Bell,
   Coins,
   FileText,
   KeyRound,
@@ -25,6 +26,7 @@ export const SETTINGS_SECTIONS = [
   'overview',
   'profile',
   'security',
+  'notifications',
   'appearance',
   'whatsapp',
   'templates',
@@ -52,6 +54,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top' },
   profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
   security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account' },
+  notifications: { id: 'notifications', label: 'Notifications', icon: Bell, group: 'account' },
   appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
   whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace', adminOnly: true },
   templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace', adminOnly: true },

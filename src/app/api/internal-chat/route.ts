@@ -109,8 +109,10 @@ export async function GET() {
 			// Calcular no leidos comparando con last_read_at del usuario
 			const myMem = myMemberships.find((m) => m.chat_id === msg.chat_id);
 			if (myMem && myMem.status === "accepted") {
-				const isAfterLastRead = new Date(msg.created_at) > new Date(myMem.last_read_at);
-				const isFromOther = msg.sender_id !== ctx.userId;
+				const lastReadTime = myMem.last_read_at ? new Date(myMem.last_read_at).getTime() : 0;
+				const msgTime = new Date(msg.created_at).getTime();
+				const isAfterLastRead = msgTime > lastReadTime;
+				const isFromOther = Boolean(msg.sender_id && msg.sender_id !== ctx.userId);
 				if (isAfterLastRead && isFromOther) {
 					unreadCountByChat[msg.chat_id] = (unreadCountByChat[msg.chat_id] || 0) + 1;
 				}
@@ -294,14 +296,25 @@ export async function POST(request: Request) {
 			// Enviar notificaciones por correo a los miembros invitados
 			try {
 				const invitedUserIds = invitedMembers.map((m: any) => m.user_id);
-				const { data: invitedProfiles } = await adminClient
+				let invitedProfiles: any[] | null = null;
+				const queryWithPrefs = await adminClient
 					.from("profiles")
-					.select("email, full_name")
+					.select("email, full_name, notification_preferences")
 					.in("user_id", invitedUserIds);
+
+				if (queryWithPrefs.error) {
+					const fallbackQuery = await adminClient
+						.from("profiles")
+						.select("email, full_name")
+						.in("user_id", invitedUserIds);
+					invitedProfiles = fallbackQuery.data;
+				} else {
+					invitedProfiles = queryWithPrefs.data;
+				}
 
 				if (invitedProfiles && invitedProfiles.length > 0) {
 					for (const prof of invitedProfiles) {
-						if (prof.email) {
+						if (prof.email && prof.notification_preferences?.email_chat_invite !== false) {
 							sendInternalChatInviteEmail({
 								toEmail: prof.email,
 								recipientName: prof.full_name || undefined,

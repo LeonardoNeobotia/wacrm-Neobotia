@@ -65,6 +65,7 @@
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
+    "unreadInternalChats": "{count} unread internal {count, plural, =1 {chat} other {chats}}",
     "unreadNotifications": "{count} unread {count, plural, =1 {notification} other {notifications}}",
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
@@ -1571,6 +1572,7 @@
       "overview": "Overview",
       "profile": "Your profile",
       "security": "Login & security",
+      "notifications": "Notifications",
       "appearance": "Appearance",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
@@ -1647,6 +1649,26 @@
     "security": {
       "title": "Login & security",
       "description": "Change your password and sign out of your devices. These keep your account safe."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Choose which emails you wish to receive from Neowapp CRM.",
+      "emailSectionTitle": "Email notifications",
+      "emailSectionDesc": "Control automated notifications sent to your registered email address.",
+      "chatInviteTitle": "Internal chat invitations",
+      "chatInviteDesc": "Receive an email when a teammate invites you to a direct chat or work group.",
+      "newContactTitle": "New contact in inbox",
+      "newContactDesc": "Receive an email notification when a new contact sends a WhatsApp message for the first time.",
+      "webLeadTitle": "Web forms (New deal and contact)",
+      "webLeadDesc": "Receive an alert when a potential lead fills out a web form creating a contact and deal.",
+      "securitySectionTitle": "Security & account",
+      "securitySectionDesc": "Mandatory notifications required for account security and recovery.",
+      "authEmailsTitle": "Password reset & verification",
+      "authEmailsDesc": "Essential transactional emails required to reset your password or verify your identity. Cannot be disabled for security reasons.",
+      "mandatoryBadge": "Mandatory",
+      "saveSuccess": "Preference updated",
+      "saveError": "Failed to update preference",
+      "loadError": "Failed to load notification preferences"
     },
     "apiKeys": {
       "title": "API keys",
