@@ -24,6 +24,8 @@ describe('Notification Preferences', () => {
 			email_new_contact: true,
 			email_web_lead: true,
 			email_task_assigned: true,
+			sound_internal_chat: true,
+			sound_inbox: true,
 		});
 	});
 
@@ -33,24 +35,31 @@ describe('Notification Preferences', () => {
 			email_new_contact: false,
 			email_web_lead: false,
 			email_task_assigned: false,
+			sound_internal_chat: false,
+			sound_inbox: false,
 		});
 		expect(result).toEqual({
 			email_chat_invite: false,
 			email_new_contact: false,
 			email_web_lead: false,
 			email_task_assigned: false,
+			sound_internal_chat: false,
+			sound_inbox: false,
 		});
 	});
 
 	it('merges partial overrides with defaults', () => {
 		const result = parseNotificationPreferences({
 			email_new_contact: false,
+			sound_inbox: false,
 		});
 		expect(result).toEqual({
 			email_chat_invite: true,
 			email_new_contact: false,
 			email_web_lead: true,
 			email_task_assigned: true,
+			sound_internal_chat: true,
+			sound_inbox: false,
 		});
 	});
 
@@ -59,12 +68,15 @@ describe('Notification Preferences', () => {
 			email_chat_invite: 'false' as unknown as boolean,
 			email_new_contact: 0 as unknown as boolean,
 			email_web_lead: null as unknown as boolean,
+			sound_inbox: 'disabled' as unknown as boolean,
 		});
 		expect(result).toEqual({
 			email_chat_invite: true,
 			email_new_contact: true,
 			email_web_lead: true,
 			email_task_assigned: true,
+			sound_internal_chat: true,
+			sound_inbox: true,
 		});
 	});
 });

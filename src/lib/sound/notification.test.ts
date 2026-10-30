@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+	isInternalChatSoundEnabled,
+	setInternalChatSoundEnabled,
+	isInboxSoundEnabled,
+	setInboxSoundEnabled,
 	isSoundMuted,
 	setSoundMuted,
 	playInternalChatSound,
@@ -12,6 +16,7 @@ describe("sound notifications", () => {
 	const mockLocalStorage = {
 		getItem: (key: string) => storage.get(key) ?? null,
 		setItem: (key: string, val: string) => storage.set(key, val),
+		removeItem: (key: string) => storage.delete(key),
 		clear: () => storage.clear(),
 	};
 
@@ -21,6 +26,7 @@ describe("sound notifications", () => {
 		vi.stubGlobal("localStorage", mockLocalStorage);
 		vi.stubGlobal("window", {
 			localStorage: mockLocalStorage,
+			dispatchEvent: vi.fn(),
 		});
 	});
 
@@ -28,12 +34,30 @@ describe("sound notifications", () => {
 		vi.useRealTimers();
 	});
 
-	it("manages mute state in localStorage", () => {
+	it("manages separate internal chat and inbox states in localStorage", () => {
+		expect(isInternalChatSoundEnabled()).toBe(true);
+		expect(isInboxSoundEnabled()).toBe(true);
+
+		setInternalChatSoundEnabled(false);
+		expect(isInternalChatSoundEnabled()).toBe(false);
+		expect(isInboxSoundEnabled()).toBe(true);
+
+		setInboxSoundEnabled(false);
+		expect(isInboxSoundEnabled()).toBe(false);
+
+		setInternalChatSoundEnabled(true);
+		expect(isInternalChatSoundEnabled()).toBe(true);
+		expect(isInboxSoundEnabled()).toBe(false);
+	});
+
+	it("maintains backwards compatibility with isSoundMuted and setSoundMuted", () => {
 		expect(isSoundMuted()).toBe(false);
 		setSoundMuted(true);
 		expect(isSoundMuted()).toBe(true);
+		expect(isInternalChatSoundEnabled()).toBe(false);
 		setSoundMuted(false);
 		expect(isSoundMuted()).toBe(false);
+		expect(isInternalChatSoundEnabled()).toBe(true);
 	});
 
 	it("does not throw when AudioContext is missing", () => {
@@ -45,10 +69,13 @@ describe("sound notifications", () => {
 		expect(() => playNotificationSound()).not.toThrow();
 	});
 
-	it("synthesizes sound when AudioContext is present", () => {
+	it("synthesizes sound when AudioContext is present and respects individual channel switches", () => {
 		const mockCreateOscillator = vi.fn().mockReturnValue({
 			type: "sine",
-			frequency: { setValueAtTime: vi.fn() },
+			frequency: {
+				setValueAtTime: vi.fn(),
+				exponentialRampToValueAtTime: vi.fn(),
+			},
 			connect: vi.fn(),
 			start: vi.fn(),
 			stop: vi.fn(),
@@ -73,13 +100,16 @@ describe("sound notifications", () => {
 
 		(globalThis as any).window.AudioContext = MockAudioContext;
 
-		setSoundMuted(false);
+		setInternalChatSoundEnabled(true);
+		setInboxSoundEnabled(true);
+
+		// 1. Chat interno habilitado
 		vi.setSystemTime(new Date(2030, 1, 1, 12, 0, 10));
 		playInternalChatSound();
 		expect(mockCreateOscillator).toHaveBeenCalled();
 		expect(mockCreateGain).toHaveBeenCalled();
 
-		// Probar que Inbox sound también sintetiza notas
+		// 2. Inbox habilitado
 		mockCreateOscillator.mockClear();
 		mockCreateGain.mockClear();
 		vi.setSystemTime(new Date(2030, 1, 1, 12, 0, 15));
@@ -87,11 +117,23 @@ describe("sound notifications", () => {
 		expect(mockCreateOscillator).toHaveBeenCalled();
 		expect(mockCreateGain).toHaveBeenCalled();
 
-		// Respetar mute
+		// 3. Desactivar solo chat interno
+		setInternalChatSoundEnabled(false);
 		mockCreateOscillator.mockClear();
-		setSoundMuted(true);
 		vi.setSystemTime(new Date(2030, 1, 1, 12, 0, 20));
 		playInternalChatSound();
+		expect(mockCreateOscillator).not.toHaveBeenCalled();
+
+		// Inbox sigue funcionando
+		vi.setSystemTime(new Date(2030, 1, 1, 12, 0, 25));
+		playInboxSound();
+		expect(mockCreateOscillator).toHaveBeenCalled();
+
+		// 4. Desactivar también inbox
+		setInboxSoundEnabled(false);
+		mockCreateOscillator.mockClear();
+		vi.setSystemTime(new Date(2030, 1, 1, 12, 0, 30));
+		playInboxSound();
 		expect(mockCreateOscillator).not.toHaveBeenCalled();
 	});
 });

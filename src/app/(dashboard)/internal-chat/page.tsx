@@ -8,6 +8,7 @@ import { InternalChatList } from "@/components/internal-chat/internal-chat-list"
 import { InternalChatThread } from "@/components/internal-chat/internal-chat-thread";
 import { CreateChatWizard } from "@/components/internal-chat/create-chat-wizard";
 import type { InternalChat } from "@/types";
+import { setActiveInternalChatId } from "@/lib/sound/active-presence";
 
 export default function InternalChatPage() {
 	return (
@@ -31,16 +32,12 @@ function InternalChatPageInner() {
 	const activeChatIdRef = useRef<string | null>(deepLinkChatId);
 	const initialAutoSelectRef = useRef(false);
 
-	// Mantener referencia sincronizada y exponer chat activo en window para verificacion precisa de foco
+	// Mantener referencia sincronizada y presencia en memoria para verificacion precisa de foco
 	useEffect(() => {
 		activeChatIdRef.current = activeChatId;
-		if (typeof window !== "undefined") {
-			(window as any).__wacrm_active_internal_chat_id = activeChatId;
-		}
+		setActiveInternalChatId(activeChatId);
 		return () => {
-			if (typeof window !== "undefined") {
-				(window as any).__wacrm_active_internal_chat_id = null;
-			}
+			setActiveInternalChatId(null);
 		};
 	}, [activeChatId]);
 
@@ -77,8 +74,8 @@ function InternalChatPageInner() {
 							activeChatIdRef.current = firstId;
 							setActiveChatId(firstId);
 							fetch(`/api/internal-chat/${firstId}/read`, { method: "POST" }).catch(() => {});
+							setActiveInternalChatId(firstId);
 							if (typeof window !== "undefined") {
-								(window as any).__wacrm_active_internal_chat_id = firstId;
 								const url = `/internal-chat?c=${firstId}`;
 								window.history.replaceState({ ...window.history.state, as: url, url }, "", url);
 								window.dispatchEvent(new CustomEvent("internal-chat-read", { detail: { chatId: firstId } }));
@@ -226,8 +223,8 @@ function InternalChatPageInner() {
 	const handleBack = () => {
 		activeChatIdRef.current = null;
 		setActiveChatId(null);
+		setActiveInternalChatId(null);
 		if (typeof window !== "undefined") {
-			(window as any).__wacrm_active_internal_chat_id = null;
 			window.history.replaceState({ ...window.history.state, as: "/internal-chat", url: "/internal-chat" }, "", "/internal-chat");
 		}
 	};

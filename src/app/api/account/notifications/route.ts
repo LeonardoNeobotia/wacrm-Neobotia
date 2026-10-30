@@ -82,6 +82,14 @@ export async function PATCH(request: Request) {
 				typeof body.email_task_assigned === 'boolean'
 					? body.email_task_assigned
 					: currentPrefs.email_task_assigned,
+			sound_internal_chat:
+				typeof body.sound_internal_chat === 'boolean'
+					? body.sound_internal_chat
+					: currentPrefs.sound_internal_chat,
+			sound_inbox:
+				typeof body.sound_inbox === 'boolean'
+					? body.sound_inbox
+					: currentPrefs.sound_inbox,
 		};
 
 		const { error: updateError } = await ctx.supabase

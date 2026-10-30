@@ -15,6 +15,8 @@ export interface NotificationPreferences {
 	email_new_contact: boolean;
 	email_web_lead: boolean;
 	email_task_assigned?: boolean;
+	sound_internal_chat?: boolean;
+	sound_inbox?: boolean;
 }
 
 export interface Profile {

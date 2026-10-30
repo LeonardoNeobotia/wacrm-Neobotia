@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { playInternalChatSound } from "@/lib/sound/notification";
+import { getActiveInternalChatId } from "@/lib/sound/active-presence";
 
 /**
  * Hook global para rastrear chats internos no leidos en todo el dashboard.
@@ -89,12 +90,11 @@ export function useInternalChatUnread(): number {
 						window.location.pathname.startsWith("/internal-chat");
 
 					// 3. Obtener el chat activo actual
-					let activeChatId: string | null = null;
-					if (typeof window !== "undefined") {
-						activeChatId =
-							(window as any).__wacrm_active_internal_chat_id ||
-							new URLSearchParams(window.location.search).get("c");
-					}
+					const activeChatId =
+						getActiveInternalChatId() ||
+						(typeof window !== "undefined"
+							? new URLSearchParams(window.location.search).get("c")
+							: null);
 
 					// El usuario sólo se considera "presente y activo en el chat" si la pestaña
 					// está enfocada, en la sección de chat interno y con este chat abierto en pantalla

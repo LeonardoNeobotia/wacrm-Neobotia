@@ -9,14 +9,18 @@
 --   "email_chat_invite": true,
 --   "email_new_contact": true,
 --   "email_web_lead": true,
---   "email_task_assigned": true
+--   "email_task_assigned": true,
+--   "sound_internal_chat": true,
+--   "sound_inbox": true
 -- }
 ALTER TABLE IF EXISTS public.profiles
 ADD COLUMN IF NOT EXISTS notification_preferences JSONB DEFAULT '{
 	"email_chat_invite": true,
 	"email_new_contact": true,
 	"email_web_lead": true,
-	"email_task_assigned": true
+	"email_task_assigned": true,
+	"sound_internal_chat": true,
+	"sound_inbox": true
 }'::jsonb;
 
 -- Comentario explicativo en el catálogo de PostgreSQL

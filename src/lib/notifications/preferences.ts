@@ -9,6 +9,8 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 	email_new_contact: true,
 	email_web_lead: true,
 	email_task_assigned: true,
+	sound_internal_chat: true,
+	sound_inbox: true,
 };
 
 /**
@@ -40,6 +42,14 @@ export function parseNotificationPreferences(
 			typeof obj.email_task_assigned === 'boolean'
 				? obj.email_task_assigned
 				: DEFAULT_NOTIFICATION_PREFERENCES.email_task_assigned,
+		sound_internal_chat:
+			typeof obj.sound_internal_chat === 'boolean'
+				? obj.sound_internal_chat
+				: DEFAULT_NOTIFICATION_PREFERENCES.sound_internal_chat,
+		sound_inbox:
+			typeof obj.sound_inbox === 'boolean'
+				? obj.sound_inbox
+				: DEFAULT_NOTIFICATION_PREFERENCES.sound_inbox,
 	};
 }
 

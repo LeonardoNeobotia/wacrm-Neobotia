@@ -16,6 +16,7 @@ import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { setActiveInboxConversationId } from "@/lib/sound/active-presence";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -48,15 +49,11 @@ function InboxPageInner() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
 
-	// Exponer el ID de la conversación activa en window para verificación síncrona de foco y sonido
+	// Sincronizar en memoria la conversación activa para verificación síncrona de foco y sonido
 	useEffect(() => {
-		if (typeof window !== "undefined") {
-			(window as any).__wacrm_active_inbox_conversation_id = activeConversation?.id ?? null;
-		}
+		setActiveInboxConversationId(activeConversation?.id ?? null);
 		return () => {
-			if (typeof window !== "undefined") {
-				(window as any).__wacrm_active_inbox_conversation_id = null;
-			}
+			setActiveInboxConversationId(null);
 		};
 	}, [activeConversation?.id]);
   const [messages, setMessages] = useState<Message[]>([]);

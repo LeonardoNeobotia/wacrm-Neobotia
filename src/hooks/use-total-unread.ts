@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation } from "@/types";
 import { playInboxSound } from "@/lib/sound/notification";
+import { getActiveInboxConversationId } from "@/lib/sound/active-presence";
 
 /**
  * Hook para contabilizar conversaciones de WhatsApp con mensajes no leidos
@@ -71,12 +72,11 @@ export function useTotalUnread(): number {
 								window.location.pathname.startsWith("/inbox");
 
 							// 3. Obtener la conversación actualmente abierta en pantalla
-							let activeConvId: string | null = null;
-							if (typeof window !== "undefined") {
-								activeConvId =
-									(window as any).__wacrm_active_inbox_conversation_id ||
-									new URLSearchParams(window.location.search).get("c");
-							}
+							const activeConvId =
+								getActiveInboxConversationId() ||
+								(typeof window !== "undefined"
+									? new URLSearchParams(window.location.search).get("c")
+									: null);
 
 							// El usuario sólo se considera "presente y activo en esta conversación" si
 							// la pestaña está enfocada, está en /inbox y tiene esta misma conversación abierta
